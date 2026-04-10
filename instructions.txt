@@ -1,0 +1,28 @@
+python main.py --mode scrape --scraper results --start 2015-01-01 --end 2024-12-31
+python main.py --mode scrape --scraper dividends --start 2015-01-01 --end 2024-12-31
+
+python main.py --mode scrape --scraper horses
+
+python main.py --mode scrape --scraper jockey_trainer
+
+python main.py --mode features
+
+python main.py --mode train --model lgbm --version v1
+python main.py --mode train --model xgb      --version v1
+python main.py --mode train --model catboost --version v1
+python main.py --mode train --model ensemble --version v1
+
+python main.py --mode backtest --model lgbm --version v1 --start 2022-01-01 --end 2024-12-31
+
+python main.py --mode ui --dashboard scraper
+python main.py --mode ui --dashboard training
+python main.py --mode ui --dashboard backtest
+python main.py --mode ui --dashboard live
+
+
+
+python main.py --mode scrape --scraper racecard
+python main.py --mode scrape --scraper odds
+python main.py --mode ui --dashboard live
+
+python main.py --mode inspect

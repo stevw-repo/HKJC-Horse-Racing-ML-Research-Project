@@ -1,0 +1,14 @@
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=5.0
+pandas>=2.2
+pyarrow>=15.0
+numpy>=1.26
+scikit-learn>=1.4
+lightgbm>=4.3
+xgboost>=2.0
+catboost>=1.2
+torch>=2.2
+streamlit>=1.35
+plotly>=5.20
+tqdm>=4.66
