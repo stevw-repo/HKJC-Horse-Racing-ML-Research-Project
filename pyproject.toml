@@ -1,0 +1,91 @@
+[project]
+name = "hkjc"
+version = "0.1.0"
+description = "HKJC horse-racing ML research platform — predicts WIN/PLACE probabilities, detects value vs pari-mutuel odds, sizes Kelly stakes, and backtests honestly. Recommends only; never places bets."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+authors = [{ name = "steven" }]
+keywords = ["horse-racing", "hkjc", "machine-learning", "pari-mutuel", "kelly", "backtesting"]
+
+# Runtime dependencies needed by the M0 foundations + the data-lake layout.
+# Heavy ML / scraping / NLP deps are added at the milestone that first needs them
+# (M1 scraper: httpx/selectolax/tenacity/aiolimiter; M3 models: lightgbm/xgboost/
+# catboost/torch; M4 NLP: spacy/sentence-transformers). See PLAN.md §3.
+dependencies = [
+    "typer>=0.12",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "pyyaml>=6.0",
+    "structlog>=24.1",
+    "tzdata>=2024.1",        # IANA tz database for zoneinfo on Windows (Asia/Hong_Kong)
+    "duckdb>=1.0",
+    "pyarrow>=16.0",
+    "polars>=1.0",
+]
+
+[project.scripts]
+hkjc = "hkjc.cli:app"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pytest>=8.0",
+    "hypothesis>=6.100",
+    "pre-commit>=3.7",
+    "types-pyyaml>=6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hkjc"]
+
+# --------------------------------------------------------------------------- #
+# Ruff (lint + format)
+# --------------------------------------------------------------------------- #
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "UP",       # pyupgrade
+    "B",        # flake8-bugbear
+    "SIM",      # flake8-simplify
+    "C4",       # flake8-comprehensions
+    "PTH",      # flake8-use-pathlib
+    "RUF",      # ruff-specific
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]  # asserts are expected in tests
+
+# --------------------------------------------------------------------------- #
+# Mypy (strict)
+# --------------------------------------------------------------------------- #
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "tests"]
+plugins = ["pydantic.mypy"]
+warn_unused_configs = true
+show_error_codes = true
+
+# NOTE: add an [[tool.mypy.overrides]] block with ignore_missing_imports for
+# untyped third-party libs (e.g. duckdb, selectolax) in M1 when they are first imported.
+
+# --------------------------------------------------------------------------- #
+# Pytest
+# --------------------------------------------------------------------------- #
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
+python_files = ["test_*.py"]

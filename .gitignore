@@ -216,3 +216,18 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---------------------------------------------------------------------------
+# HKJC project-specific
+# ---------------------------------------------------------------------------
+# Local data lake (raw Parquet, processed DuckDB, cache, live-odds logs, MLflow runs).
+# Never commit scraped data or model artifacts. Leading slash anchors to repo root so
+# the source package src/hkjc/data/ is NOT ignored.
+/data/
+/mlruns/
+
+# Local-only config overrides (gitignored layer on top of config/*.yaml)
+config/local.yaml
+
+# uv.lock IS committed (reproducibility) — do not ignore it.
+

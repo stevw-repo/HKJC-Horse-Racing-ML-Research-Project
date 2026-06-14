@@ -1,0 +1,44 @@
+# Feature groups (built in M2+) and the locked horse-bio block (PLAN.md §0).
+# `market` features are kept behind a hard wall from fundamental features (PLAN.md §1B);
+# `nlp_text` is strictly lagged (prior runs only, PLAN.md §1C) and ablatable (M4).
+features:
+  feature_version: v0           # bump when feature builders change (reproducibility)
+
+  groups:
+    form:           { enabled: true }
+    speed_figures:  { enabled: true }   # home-grown, from finish/sectional times (M2/M3)
+    draw_bias:      { enabled: true }   # incl. rail position (#3)
+    weight:         { enabled: true }
+    class_moves:    { enabled: true }
+    days_since_run: { enabled: true }
+    gear:           { enabled: true }   # first-time-gear flags (#8)
+    going_track:    { enabled: true }   # (#3)
+    weather:        { enabled: true }   # HKO daily-climate
+    seasonality:    { enabled: true }
+    field_size:     { enabled: true }
+    pedigree:       { enabled: true }   # sire/dam/dam's-sire (#11, HKJC-only)
+    trial_form:     { enabled: true }   # barrier trials (#4)
+    trackwork:      { enabled: true }   # (#5)
+    vet_flags:      { enabled: true }   # pre-race vet-list (#6)
+    public_holiday: { enabled: true }   # (#14)
+    nlp_text:       { enabled: true, ablatable: true }   # M4, lagged
+    market:         { enabled: true, wall: true }        # walled off from fundamentals
+
+  # Horse bio — full set (locked). age_at_race is derived from age + racing season.
+  horse_bio:
+    country_of_origin: true
+    age_at_race: true
+    colour: true
+    sex: true
+    import_type: true
+    sire: true
+    dam: true
+    dams_sire: true
+    owner: true
+    season_start_rating: true
+    current_rating: true
+
+  # Leakage controls (PLAN.md §1H). The canary must score ~0 (M2 CI gate).
+  leakage:
+    enable_canary: true
+    enforce_as_of: true           # every feature computed from event_time <= race_off_time

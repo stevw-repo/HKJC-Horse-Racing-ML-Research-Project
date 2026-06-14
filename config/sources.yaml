@@ -1,0 +1,45 @@
+# Data scope — LOCKED per PLAN.md §0 (reviewed & approved 2026-06-14).
+# Core HKJC race data is always on; alternative sources are the user's selection
+# (3,4,5,6,7,8,9,11,14 enabled). Weather = HKO daily-climate CSV open-data API.
+sources:
+  # Verified endpoints (server-rendered HTML + open APIs).
+  hkjc_base_url: "https://racing.hkjc.com/en-us/local/information"
+  hkjc_graphql_url: "https://info.cld.hkjc.com/graphql/base/"
+  hko_weather_api: "https://data.weather.gov.hk/weatherAPI/opendata"
+  venues: [ST, HV]
+  language: en
+
+  # Core race data — always collected.
+  core:
+    meetings: true
+    races: true
+    runners: true
+    results: true
+    dividends: true            # full dividend table, all pools (exotics-ready)
+    sectionals: true
+    profiles: true             # horse / jockey / trainer
+    international_rating: true  # per-runner field (class proxy); NOT the external WBRR list
+
+  # Alternative sources. gating documents when each may legally enter features.
+  alternative_sources:
+    # --- ENABLED (user selection 2026-06-14) ---
+    going_rail:        { id: 3,  enabled: true,  gating: pre_race }
+    barrier_trials:    { id: 4,  enabled: true,  gating: pre_race }
+    trackwork:         { id: 5,  enabled: true,  gating: pre_race }
+    vet_records:       { id: 6,  enabled: true,  gating: "vet_list_prerace_feature; postrace_record_lagged_only" }
+    sectional_archive: { id: 7,  enabled: true,  gating: pre_race }
+    gear_changes:      { id: 8,  enabled: true,  gating: pre_race }
+    racing_news:       { id: 9,  enabled: true,  gating: lagged }
+    pedigree:          { id: 11, enabled: true,  gating: static }   # HKJC on-site only; no external DBs
+    public_holidays:   { id: 14, enabled: true,  gating: pre_race }
+    # --- DROPPED (not collected in v1) ---
+    weather_stations_realtime: { id: 1,  enabled: false }
+    rainfall_nowcast:          { id: 2,  enabled: false }   # no clean historical archive
+    exotic_pool_odds:          { id: 10, enabled: false }
+    external_wbrr:             { id: 12, enabled: false }
+    overseas_prior_form:       { id: 13, enabled: false }
+    aqhi_tide:                 { id: 15, enabled: false }
+
+  weather:
+    provider: hko_opendata_csv
+    historical_only: true        # no race-day microclimate source in v1
