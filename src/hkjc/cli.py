@@ -6,6 +6,7 @@ that are implemented in later milestones.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated
 
 import typer
@@ -84,19 +85,70 @@ def doctor() -> None:
 
 
 def _todo(command: str, milestone: str) -> None:
-    typer.echo(f"`{command}` is planned for {milestone} — not implemented yet.")
+    typer.echo(f"`{command}` is planned for {milestone} - not implemented yet.")
 
 
 @app.command()
-def scrape() -> None:
-    """Incrementally scrape HKJC results/cards/profiles + HKO weather (M1)."""
-    _todo("scrape", "M1 (scraper + storage)")
+def scrape(
+    date_str: Annotated[str, typer.Option("--date", help="Meeting date, YYYY-MM-DD.")],
+    force: Annotated[bool, typer.Option(help="Re-fetch even if already stored.")] = False,
+) -> None:
+    """Scrape one meeting's full results into raw Parquet + the manifest (M1)."""
+    from hkjc.data import pipeline
+
+    report = pipeline.scrape_meeting(date.fromisoformat(date_str), force=force)
+    if report.skipped:
+        typer.echo(f"{report.race_date}: already stored - skipped (0 fetches).")
+    elif report.venue is None:
+        typer.echo(f"{report.race_date}: no meeting found.")
+    else:
+        typer.echo(
+            f"{report.race_date} {report.venue}: {report.races} races, "
+            f"{report.fetched} fetched, rows={report.rows}"
+        )
 
 
 @app.command()
-def backfill() -> None:
-    """Backfill all modern-markup seasons (M1)."""
-    _todo("backfill", "M1 (scraper + storage)")
+def backfill(
+    limit: Annotated[int | None, typer.Option(help="Only the newest N meetings.")] = None,
+    since: Annotated[str | None, typer.Option(help="Only meetings on/after YYYY-MM-DD.")] = None,
+    force: Annotated[bool, typer.Option(help="Re-fetch even if already stored.")] = False,
+) -> None:
+    """Backfill meetings from the results dropdown, idempotently (M1)."""
+    from hkjc.data import pipeline
+
+    def _progress(rep: pipeline.ScrapeReport) -> None:
+        if not rep.skipped and rep.venue:
+            typer.echo(f"  {rep.race_date} {rep.venue}: {rep.races} races ({rep.fetched} fetched)")
+
+    reports = pipeline.backfill(
+        limit=limit,
+        since=date.fromisoformat(since) if since else None,
+        force=force,
+        on_meeting=_progress,
+    )
+    scraped = sum(1 for r in reports if not r.skipped and r.venue)
+    skipped = sum(1 for r in reports if r.skipped)
+    fetched = sum(r.fetched for r in reports)
+    typer.echo(
+        f"Backfill: {len(reports)} dates — {scraped} scraped, {skipped} skipped, {fetched} fetches."
+    )
+
+
+@app.command(name="data-health")
+def data_health() -> None:
+    """Show stored data coverage and the manifest size (M1)."""
+    from hkjc.data import pipeline
+
+    s = pipeline.coverage_summary()
+    typer.echo("Coverage:")
+    typer.echo(f"  meetings     : {s['meetings']}  ({s['date_min']} -> {s['date_max']})")
+    typer.echo(f"  races        : {s['races_rows']}")
+    typer.echo(f"  runners      : {s['results_rows']}")
+    typer.echo(f"  dividends    : {s['dividends_rows']}")
+    typer.echo(f"  manifest urls: {s['manifest_urls']}")
+    for season, n in sorted(s["seasons"].items()):
+        typer.echo(f"    season {season}: {n} meetings")
 
 
 @app.command()

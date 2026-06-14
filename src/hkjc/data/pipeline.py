@@ -1,0 +1,192 @@
+"""M1 scrape orchestration: fetch -> parse -> store, idempotently.
+
+A meeting whose date is in the past is *frozen*: once its meeting URL is recorded in the
+manifest, re-runs skip it entirely (zero network fetches, zero new rows).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import date
+from typing import Any
+
+import duckdb
+
+from hkjc.common.config import AppConfig, get_config
+from hkjc.common.time import now_hkt
+from hkjc.data.models import MeetingResults
+from hkjc.data.parse.results import (
+    count_races,
+    parse_meeting_dates,
+    parse_race_result,
+    parse_venue,
+)
+from hkjc.data.scrape.client import Fetcher
+from hkjc.data.store.manifest import Manifest
+from hkjc.data.store.writer import refresh_views, season_label, write_meeting
+
+DEFAULT_RATE_PER_SEC = 5.0
+DEFAULT_CONCURRENCY = 4
+
+
+@dataclass(frozen=True, slots=True)
+class ScrapeReport:
+    """Outcome of scraping one meeting date."""
+
+    race_date: date
+    venue: str | None
+    races: int
+    fetched: int  # network GETs (cache hits and skips excluded)
+    skipped: bool  # whole meeting skipped via manifest
+    rows: dict[str, int] = field(default_factory=dict)
+
+
+def meeting_url(base: str, day: date) -> str:
+    return f"{base}/resultsall?racedate={day:%Y/%m/%d}"
+
+
+def race_url(base: str, day: date, venue: str, race_no: int) -> str:
+    return f"{base}/localresults?racedate={day:%Y/%m/%d}&Racecourse={venue}&RaceNo={race_no}"
+
+
+def scrape_meeting(
+    day: date,
+    *,
+    cfg: AppConfig | None = None,
+    fetcher: Fetcher | None = None,
+    manifest: Manifest | None = None,
+    force: bool = False,
+) -> ScrapeReport:
+    """Scrape one meeting's full results into raw Parquet + the manifest."""
+    cfg = cfg or get_config()
+    base = cfg.sources.hkjc_base_url
+    frozen = day < now_hkt().date()
+
+    owns_manifest = manifest is None
+    manifest = manifest or Manifest(cfg.paths.duckdb_path)
+    fetcher = fetcher or Fetcher(
+        cfg.paths.cache_dir, rate_per_sec=DEFAULT_RATE_PER_SEC, concurrency=DEFAULT_CONCURRENCY
+    )
+    try:
+        m_url = meeting_url(base, day)
+        if frozen and not force and manifest.has(m_url):
+            return ScrapeReport(day, venue=None, races=0, fetched=0, skipped=True)
+
+        m_res = fetcher.fetch(m_url)
+        fetched = 0 if m_res.from_cache else 1
+        venue = parse_venue(m_res.text)
+        if venue is None:  # no meeting on this date
+            if frozen:
+                manifest.record(m_url, "resultsall", m_res.content_hash, m_res.status, 0)
+            return ScrapeReport(day, venue=None, races=0, fetched=fetched, skipped=False)
+
+        n_races = count_races(m_res.text)
+        urls = [race_url(base, day, venue, no) for no in range(1, n_races + 1)]
+        race_results = fetcher.fetch_many(urls)
+        fetched += sum(0 if r.from_cache else 1 for r in race_results)
+
+        races = []
+        for no, result in zip(range(1, n_races + 1), race_results, strict=True):
+            race = parse_race_result(result.text, day, venue, no)
+            races.append(race)
+            manifest.record(
+                urls[no - 1], "localresults", result.content_hash, result.status, len(race.runners)
+            )
+
+        meeting = MeetingResults(race_date=day, venue=venue, races=races)
+        counts = write_meeting(cfg.paths.raw_dir, meeting)
+        refresh_views(manifest.con, cfg.paths.raw_dir)
+        # Record the meeting URL last: its presence means the meeting is fully stored.
+        manifest.record(m_url, "resultsall", m_res.content_hash, m_res.status, n_races)
+        return ScrapeReport(
+            day, venue=venue, races=len(races), fetched=fetched, skipped=False, rows=counts
+        )
+    finally:
+        if owns_manifest:
+            manifest.close()
+
+
+def list_meeting_dates(cfg: AppConfig | None = None, fetcher: Fetcher | None = None) -> list[date]:
+    """Fetch the results landing page and return all meeting dates (ascending)."""
+    cfg = cfg or get_config()
+    fetcher = fetcher or Fetcher(cfg.paths.cache_dir, use_cache=False)
+    landing = fetcher.fetch(f"{cfg.sources.hkjc_base_url}/localresults")
+    return sorted(parse_meeting_dates(landing.text))
+
+
+def backfill(
+    *,
+    cfg: AppConfig | None = None,
+    limit: int | None = None,
+    since: date | None = None,
+    force: bool = False,
+    on_meeting: Callable[[ScrapeReport], None] | None = None,
+) -> list[ScrapeReport]:
+    """Scrape every meeting from the dropdown (idempotent). ``limit`` keeps the newest N."""
+    cfg = cfg or get_config()
+    fetcher = Fetcher(
+        cfg.paths.cache_dir, rate_per_sec=DEFAULT_RATE_PER_SEC, concurrency=DEFAULT_CONCURRENCY
+    )
+    dates = list_meeting_dates(cfg, fetcher)
+    if since is not None:
+        dates = [d for d in dates if d >= since]
+    if limit is not None:
+        dates = dates[-limit:]
+
+    reports: list[ScrapeReport] = []
+    with Manifest(cfg.paths.duckdb_path) as manifest:
+        for day in dates:
+            report = scrape_meeting(day, cfg=cfg, fetcher=fetcher, manifest=manifest, force=force)
+            reports.append(report)
+            if on_meeting is not None:
+                on_meeting(report)
+    return reports
+
+
+def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
+    """Summarize stored coverage from the DuckDB views (for the data-health report)."""
+    cfg = cfg or get_config()
+    summary: dict[str, Any] = {
+        "races_rows": 0,
+        "results_rows": 0,
+        "dividends_rows": 0,
+        "meetings": 0,
+        "manifest_urls": 0,
+        "date_min": None,
+        "date_max": None,
+        "seasons": {},
+    }
+    if not cfg.paths.duckdb_path.is_file():
+        return summary
+    con = duckdb.connect(str(cfg.paths.duckdb_path))
+    try:
+        for table in ("races", "results", "dividends"):
+            try:
+                row = con.execute(f"SELECT count(*) FROM {table}").fetchone()
+                summary[f"{table}_rows"] = int(row[0]) if row else 0
+            except duckdb.Error:
+                pass
+        try:
+            meetings = con.execute(
+                "SELECT race_date, venue FROM races GROUP BY race_date, venue ORDER BY race_date"
+            ).fetchall()
+            summary["meetings"] = len(meetings)
+            if meetings:
+                summary["date_min"] = str(meetings[0][0])
+                summary["date_max"] = str(meetings[-1][0])
+                seasons: dict[str, int] = {}
+                for race_date, _venue in meetings:
+                    label = season_label(race_date)
+                    seasons[label] = seasons.get(label, 0) + 1
+                summary["seasons"] = seasons
+        except duckdb.Error:
+            pass
+        try:
+            row = con.execute("SELECT count(*) FROM _scrape_manifest").fetchone()
+            summary["manifest_urls"] = int(row[0]) if row else 0
+        except duckdb.Error:
+            pass
+    finally:
+        con.close()
+    return summary

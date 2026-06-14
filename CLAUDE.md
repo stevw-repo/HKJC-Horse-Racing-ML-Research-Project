@@ -93,10 +93,31 @@ scope** (PLAN.md §0); update them if the scope intentionally changes.
 - Tests live in `tests/`, named `test_*.py`, fully typed (`-> None`). Property tests
   (hypothesis) are reserved for the backtest/Kelly/dividend math (M2+).
 
+## M1 scraper (in progress)
+
+The **results** pipeline is built and pilot-validated. Flow: `data/pipeline.py`
+orchestrates `scrape/client.py` (async fetcher: cache + retry + rate-limit + concurrency)
+→ `parse/results.py` (per-race page is the source of truth — only it carries Win Odds,
+finish time, running positions, and horse/jockey/trainer ids; the meeting `resultsall`
+page is abridged, used only for venue + race-count enumeration) → `store/writer.py`
+(partitioned raw Parquet + DuckDB views) + `store/manifest.py` (`_scrape_manifest` for
+idempotency). Parsed shapes live in `data/models.py`.
+
+CLI: `hkjc scrape --date YYYY-MM-DD [--force]`, `hkjc backfill [--limit N] [--since ...]`,
+`hkjc data-health`. Meeting URLs (`resultsall?racedate=`) discover venue + race count
+without a `Racecourse` param; per-race URLs are `localresults?...&RaceNo=N`. Re-running a
+**frozen** (past) meeting recorded in the manifest fetches 0 rows.
+
+**Open item before the full backfill:** the results `selectId` dropdown only lists ~2
+seasons (newest 2026, oldest 2024-07-27). Deep historical backfill needs a date-candidate
+generator (Wed + weekend race days, probe + record empties) or a season param.
+
+**Remaining M1:** race cards, horse/jockey/trainer profiles, enabled pre-race alt sources
+(#3 going/rail, #4 trials, #5 trackwork, #6 vet-list, #8 gear, #11 pedigree, #14 holidays),
+HKO weather CSV, then the full backfill + a richer coverage/gap report.
+
 ## Milestone status
 
-M0 (foundations) is **done**: env + lockfile, config system, structlog, DuckDB/Parquet
-path layout, ruff/mypy/pytest/pre-commit, GitHub Actions CI, and a Typer CLI skeleton
-(`version`/`doctor` work; pipeline commands are stubs). **M1 (incremental scraper +
-storage) is next** — see PLAN.md §2/§4. Each milestone has an explicit exit criterion in
-PLAN.md §2; treat it as the definition of done.
+M0 (foundations) is **done**. M1 (scraper + storage) is **underway** (results pipeline +
+pilot landed; see above). Each milestone has an explicit exit criterion in PLAN.md §2;
+treat it as the definition of done.

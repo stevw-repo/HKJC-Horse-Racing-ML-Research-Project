@@ -35,6 +35,17 @@ def test_doctor_runs() -> None:
 
 
 def test_stub_command_runs() -> None:
-    result = runner.invoke(app, ["scrape"])
+    result = runner.invoke(app, ["train"])
     assert result.exit_code == 0
-    assert "M1" in result.stdout
+    assert "M3" in result.stdout
+
+
+def test_scrape_requires_date() -> None:
+    result = runner.invoke(app, ["scrape"])
+    assert result.exit_code != 0  # --date is required
+
+
+def test_data_health_runs() -> None:
+    result = runner.invoke(app, ["data-health"])
+    assert result.exit_code == 0
+    assert "Coverage" in result.stdout
