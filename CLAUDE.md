@@ -161,6 +161,27 @@ trackwork #5, sectional archive #7, racing news #9 (M4 NLP), pedigree #11, holid
 
 ## Milestone status
 
-M0 (foundations) is **done**. M1 (scraper + storage) is **underway** (results pipeline +
-pilot landed; see above). Each milestone has an explicit exit criterion in PLAN.md §2;
-treat it as the definition of done.
+M0 (foundations) and **M1 (scraper + storage) are implementation-complete**: every locked
+source has a parser + DuckDB view + offline fixture test, idempotency is proven, historical
+enumeration reaches ~2006, and `hkjc data-health` reports coverage. The one operational
+step left is **running the full backfill** (`hkjc backfill` — a multi-hour crawl the user
+kicks off; nothing else depends on it being run first). Forward race-card capture is parked
+with M7. Each milestone's exit criterion is in PLAN.md §2 — treat it as the definition of done.
+
+## Next: M2 (features + baseline + honest backtest)
+
+Start here when resuming. Build against the DuckDB views the scraper populates
+(`races`, `results`, `dividends`, `horses`, `horse_form`, `people`, `weather`,
+`barrier_trials`, `trackwork`, `public_holidays`). M2 scope (PLAN.md §2):
+- **As-of feature store** in `features/` — every feature computable from `event_time ≤
+  race_off_time`; honor the **market wall** (SP is market data) and **lagged-text** rules.
+- **Leakage canary** (shuffle/future sentinel) that must score ≈0 — the highest-ROI test.
+- **PL-strength conditional-logit baseline** (`models/base.py` = `ProbabilityModel` →
+  per-runner strength vector; `models/logit/`); Harville PLACE.
+- **Walk-forward backtest** in `backtest/` with takeout (~17.5%), HK$10 rounding,
+  pool-impact, place-count-by-field-size + dead-heat logic; bootstrap CIs; **two ROIs**
+  (model-only + market-blended). Property-test the dividend/Kelly/place math (hypothesis).
+- Leaf model subpackages and `models/base.py` do **not** exist yet — create them in M2.
+  Add ML deps (numpy/scipy/scikit-learn/polars-as-needed) via `uv add` at this milestone.
+- Exit criterion: end-to-end walk-forward backtest of the baseline with honest ROI/Sharpe
+  + calibration plots + CIs, and the leakage canary scoring ≈0.
