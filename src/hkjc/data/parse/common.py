@@ -16,6 +16,7 @@ _TIME_RE = re.compile(r"^(?:(\d+):)?(\d{1,2})\.(\d{1,2})$")
 _TIME_DOTS_RE = re.compile(r"^(\d+)\.(\d{2})\.(\d{1,2})$")  # form-table form, e.g. 1.38.85
 _DATE_DMY_RE = re.compile(r"^(\d{2})/(\d{2})/(\d{4})$")
 _DATE_DMY2_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{2})$")  # 2-digit year, e.g. 03/06/26
+_DATE_DMY_FLEX_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")  # unpadded, e.g. 9/6/2026
 
 
 def clean(text: str | None) -> str:
@@ -81,3 +82,12 @@ def parse_dmy2(text: str) -> date | None:
         return None
     day, month, year = (int(g) for g in match.groups())
     return date(2000 + year, month, day)
+
+
+def parse_dmy_flex(text: str) -> date | None:
+    """Parse an unpadded ``D/M/YYYY`` date (e.g. ``9/6/2026``)."""
+    match = _DATE_DMY_FLEX_RE.match(clean(text))
+    if not match:
+        return None
+    day, month, year = (int(g) for g in match.groups())
+    return date(year, month, day)

@@ -34,8 +34,15 @@ from hkjc.data.store.writer import (
     write_horse_profile,
     write_meeting,
     write_person_profile,
+    write_trackwork,
     write_trials,
     write_weather,
+)
+from hkjc.data.trackwork import (
+    parse_trackwork_dates,
+    parse_trackwork_page,
+    racing_origin,
+    trackwork_url,
 )
 from hkjc.data.weather.hko import DATATYPES, VENUE_STATION, parse_climate_csv, weather_url
 
@@ -375,6 +382,57 @@ def scrape_trials(
     return {"trial_dates": scraped, "trial_rows": total_rows}
 
 
+def scrape_trackwork(
+    *,
+    cfg: AppConfig | None = None,
+    limit: int | None = None,
+    since: date | None = None,
+    force: bool = False,
+    max_pages: int = 60,
+    on_date: Callable[[date, int], None] | None = None,
+) -> dict[str, int]:
+    """Scrape trackwork (paginated JSON) per available date (idempotent on frozen dates)."""
+    cfg = cfg or get_config()
+    origin = racing_origin(cfg.sources.hkjc_base_url)
+    fetcher = Fetcher(
+        cfg.paths.cache_dir, rate_per_sec=DEFAULT_RATE_PER_SEC, concurrency=DEFAULT_CONCURRENCY
+    )
+    landing = fetcher.fetch(f"{cfg.sources.hkjc_base_url}/trackworksearch")
+    dates = parse_trackwork_dates(landing.text)
+    if since is not None:
+        dates = [d for d in dates if d >= since]
+    if limit is not None:
+        dates = dates[-limit:]
+
+    total_rows = 0
+    scraped = 0
+    with Manifest(cfg.paths.duckdb_path) as manifest:
+        for day in dates:
+            marker = trackwork_url(origin, day, 0)  # stable per-date manifest key
+            if day < now_hkt().date() and not force and manifest.has(marker):
+                continue
+            records = []
+            content_hash = ""
+            status = 0
+            page = 1
+            for _ in range(max_pages):
+                result = fetcher.fetch(trackwork_url(origin, day, page))
+                content_hash, status = result.content_hash, result.status
+                next_page, page_records = parse_trackwork_page(result.text, day)
+                records.extend(page_records)
+                if not page_records or next_page <= page:
+                    break
+                page = next_page
+            n_rows = write_trackwork(cfg.paths.raw_dir, day, records)
+            manifest.record(marker, "trackwork", content_hash, status, n_rows)
+            total_rows += n_rows
+            scraped += 1
+            if on_date is not None:
+                on_date(day, n_rows)
+        refresh_views(manifest.con, cfg.paths.raw_dir)
+    return {"trackwork_dates": scraped, "trackwork_rows": total_rows}
+
+
 def ingest_holidays(*, cfg: AppConfig | None = None) -> dict[str, int]:
     """Ingest the gov.hk public-holiday calendar (#14)."""
     cfg = cfg or get_config()
@@ -402,6 +460,7 @@ def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
         "weather_rows": 0,
         "public_holidays_rows": 0,
         "barrier_trials_rows": 0,
+        "trackwork_rows": 0,
         "meetings": 0,
         "manifest_urls": 0,
         "date_min": None,
@@ -422,6 +481,7 @@ def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
             "weather",
             "public_holidays",
             "barrier_trials",
+            "trackwork",
         ):
             try:
                 row = con.execute(f"SELECT count(*) FROM {table}").fetchone()

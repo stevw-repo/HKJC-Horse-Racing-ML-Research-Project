@@ -20,6 +20,7 @@ from hkjc.data.models import (
     MeetingResults,
     PersonProfile,
     PublicHoliday,
+    TrackworkRecord,
     WeatherDaily,
 )
 
@@ -36,6 +37,7 @@ VIEW_TABLES = (
     "weather",
     "public_holidays",
     "barrier_trials",
+    "trackwork",
 )
 
 _RACES_SCHEMA: dict[str, pl.DataType] = {
@@ -171,6 +173,15 @@ _TRIALS_SCHEMA: dict[str, pl.DataType] = {
     "result": pl.String(),
     "comment": pl.String(),
 }
+_TRACKWORK_SCHEMA: dict[str, pl.DataType] = {
+    "work_date": pl.Date(),
+    "horse_name": pl.String(),
+    "trainer": pl.String(),
+    "work_type": pl.String(),
+    "racecourse_track": pl.String(),
+    "workouts": pl.String(),
+    "gear": pl.String(),
+}
 _SCHEMAS = {"races": _RACES_SCHEMA, "results": _RESULTS_SCHEMA, "dividends": _DIVIDENDS_SCHEMA}
 
 
@@ -286,6 +297,17 @@ def write_trials(raw_dir: Path, trial_date: date, runs: list[BarrierTrialRun]) -
     rows = [r.model_dump() for r in runs]
     pl.DataFrame(rows, schema=_TRIALS_SCHEMA).write_parquet(
         trials_dir / f"{trial_date:%Y-%m-%d}.parquet"
+    )
+    return len(rows)
+
+
+def write_trackwork(raw_dir: Path, work_date: date, records: list[TrackworkRecord]) -> int:
+    """Write one day's trackwork to a per-date Parquet file; return row count."""
+    work_dir = raw_dir / "trackwork"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    rows = [r.model_dump() for r in records]
+    pl.DataFrame(rows, schema=_TRACKWORK_SCHEMA).write_parquet(
+        work_dir / f"{work_date:%Y-%m-%d}.parquet"
     )
     return len(rows)
 

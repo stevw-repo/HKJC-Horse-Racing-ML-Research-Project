@@ -197,3 +197,17 @@ class BarrierTrialRun(BaseModel):
     time_s: float | None = None
     result: str | None = None  # e.g. "Passed"
     comment: str | None = None
+
+
+class TrackworkRecord(BaseModel):
+    """One horse's morning trackwork on a given day (source #5, JSON endpoint)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    work_date: date
+    horse_name: str
+    trainer: str | None = None  # name (the JSON feed carries names, not ids)
+    work_type: str | None = None  # e.g. Trotting / Gallop / Swimming
+    racecourse_track: str | None = None  # e.g. "Conghua TroR"
+    workouts: str | None = None  # e.g. "TroR TroR Canter (R.B.)"
+    gear: str | None = None
