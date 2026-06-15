@@ -115,6 +115,7 @@ class Sources(BaseModel):
     hkjc_base_url: str = "https://racing.hkjc.com/en-us/local/information"
     hkjc_graphql_url: str = "https://info.cld.hkjc.com/graphql/base/"
     hko_weather_api: str = "https://data.weather.gov.hk/weatherAPI/opendata"
+    gov_holidays_url: str = "https://www.1823.gov.hk/common/ical/en.json"
     venues: list[str] = Field(default_factory=lambda: ["ST", "HV"])
     language: str = "en"
     core: CoreSources = Field(default_factory=CoreSources)

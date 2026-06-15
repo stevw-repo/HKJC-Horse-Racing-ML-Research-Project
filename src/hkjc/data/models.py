@@ -162,3 +162,12 @@ class WeatherDaily(BaseModel):
     mean_temp: float | None = None
     max_temp: float | None = None
     min_temp: float | None = None
+
+
+class PublicHoliday(BaseModel):
+    """One HK public holiday (gov.hk open data, source #14)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    date: date
+    name: str

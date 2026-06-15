@@ -14,12 +14,27 @@ from typing import Any
 
 import polars as pl
 
-from hkjc.data.models import HorseProfile, MeetingResults, PersonProfile, WeatherDaily
+from hkjc.data.models import (
+    HorseProfile,
+    MeetingResults,
+    PersonProfile,
+    PublicHoliday,
+    WeatherDaily,
+)
 
 # Meeting-partitioned tables (written by write_meeting).
 TABLES = ("races", "results", "dividends")
-# All tables exposed as DuckDB views (meeting tables + profiles + weather).
-VIEW_TABLES = ("races", "results", "dividends", "horses", "horse_form", "people", "weather")
+# All tables exposed as DuckDB views (meeting tables + profiles + weather + holidays).
+VIEW_TABLES = (
+    "races",
+    "results",
+    "dividends",
+    "horses",
+    "horse_form",
+    "people",
+    "weather",
+    "public_holidays",
+)
 
 _RACES_SCHEMA: dict[str, pl.DataType] = {
     "race_date": pl.Date(),
@@ -132,6 +147,7 @@ _WEATHER_SCHEMA: dict[str, pl.DataType] = {
     "max_temp": pl.Float64(),
     "min_temp": pl.Float64(),
 }
+_HOLIDAYS_SCHEMA: dict[str, pl.DataType] = {"date": pl.Date(), "name": pl.String()}
 _SCHEMAS = {"races": _RACES_SCHEMA, "results": _RESULTS_SCHEMA, "dividends": _DIVIDENDS_SCHEMA}
 
 
@@ -226,6 +242,17 @@ def write_weather(raw_dir: Path, records: list[WeatherDaily]) -> int:
     weather_dir.mkdir(parents=True, exist_ok=True)
     rows = [r.model_dump() for r in records]
     pl.DataFrame(rows, schema=_WEATHER_SCHEMA).write_parquet(weather_dir / "weather.parquet")
+    return len(rows)
+
+
+def write_holidays(raw_dir: Path, holidays: list[PublicHoliday]) -> int:
+    """Write public-holiday rows to a single Parquet file (overwritten on refresh)."""
+    holidays_dir = raw_dir / "public_holidays"
+    holidays_dir.mkdir(parents=True, exist_ok=True)
+    rows = [h.model_dump() for h in holidays]
+    pl.DataFrame(rows, schema=_HOLIDAYS_SCHEMA).write_parquet(
+        holidays_dir / "public_holidays.parquet"
+    )
     return len(rows)
 
 

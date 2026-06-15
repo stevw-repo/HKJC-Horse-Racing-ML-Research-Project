@@ -173,6 +173,15 @@ def scrape_weather(
     )
 
 
+@app.command(name="scrape-holidays")
+def scrape_holidays() -> None:
+    """Ingest the HK public-holiday calendar from gov.hk open data (M1)."""
+    from hkjc.data import pipeline
+
+    summary = pipeline.ingest_holidays()
+    typer.echo(f"Holidays: {summary['holidays']} dates.")
+
+
 @app.command(name="data-health")
 def data_health() -> None:
     """Show stored data coverage and the manifest size (M1)."""
@@ -188,6 +197,7 @@ def data_health() -> None:
     typer.echo(f"  horse form   : {s['horse_form_rows']}")
     typer.echo(f"  people       : {s['people_rows']}")
     typer.echo(f"  weather      : {s['weather_rows']}")
+    typer.echo(f"  holidays     : {s['public_holidays_rows']}")
     typer.echo(f"  manifest urls: {s['manifest_urls']}")
     for season, n in sorted(s["seasons"].items()):
         typer.echo(f"    season {season}: {n} meetings")

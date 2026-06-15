@@ -6,6 +6,7 @@ sources:
   hkjc_base_url: "https://racing.hkjc.com/en-us/local/information"
   hkjc_graphql_url: "https://info.cld.hkjc.com/graphql/base/"
   hko_weather_api: "https://data.weather.gov.hk/weatherAPI/opendata"
+  gov_holidays_url: "https://www.1823.gov.hk/common/ical/en.json"   # HK public holidays (#14)
   venues: [ST, HV]
   language: en
 

@@ -15,6 +15,7 @@ import duckdb
 
 from hkjc.common.config import AppConfig, get_config
 from hkjc.common.time import now_hkt
+from hkjc.data.holidays import parse_holidays
 from hkjc.data.models import MeetingResults, WeatherDaily
 from hkjc.data.parse.profiles import parse_horse_profile, parse_person_profile
 from hkjc.data.parse.results import (
@@ -28,6 +29,7 @@ from hkjc.data.store.manifest import Manifest
 from hkjc.data.store.writer import (
     refresh_views,
     season_label,
+    write_holidays,
     write_horse_profile,
     write_meeting,
     write_person_profile,
@@ -321,6 +323,20 @@ def ingest_weather(*, cfg: AppConfig | None = None, since_year: int = 2000) -> d
     return {"weather_rows": n_rows, "stations": len(VENUE_STATION)}
 
 
+def ingest_holidays(*, cfg: AppConfig | None = None) -> dict[str, int]:
+    """Ingest the gov.hk public-holiday calendar (#14)."""
+    cfg = cfg or get_config()
+    fetcher = Fetcher(
+        cfg.paths.cache_dir, rate_per_sec=DEFAULT_RATE_PER_SEC, concurrency=DEFAULT_CONCURRENCY
+    )
+    result = fetcher.fetch(cfg.sources.gov_holidays_url)
+    n_rows = write_holidays(cfg.paths.raw_dir, parse_holidays(result.text))
+    with Manifest(cfg.paths.duckdb_path) as manifest:
+        manifest.record(result.url, "gov_holidays", result.content_hash, result.status, n_rows)
+        refresh_views(manifest.con, cfg.paths.raw_dir)
+    return {"holidays": n_rows}
+
+
 def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
     """Summarize stored coverage from the DuckDB views (for the data-health report)."""
     cfg = cfg or get_config()
@@ -332,6 +348,7 @@ def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
         "horse_form_rows": 0,
         "people_rows": 0,
         "weather_rows": 0,
+        "public_holidays_rows": 0,
         "meetings": 0,
         "manifest_urls": 0,
         "date_min": None,
@@ -342,7 +359,16 @@ def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
         return summary
     con = duckdb.connect(str(cfg.paths.duckdb_path))
     try:
-        for table in ("races", "results", "dividends", "horses", "horse_form", "people", "weather"):
+        for table in (
+            "races",
+            "results",
+            "dividends",
+            "horses",
+            "horse_form",
+            "people",
+            "weather",
+            "public_holidays",
+        ):
             try:
                 row = con.execute(f"SELECT count(*) FROM {table}").fetchone()
                 summary[f"{table}_rows"] = int(row[0]) if row else 0
