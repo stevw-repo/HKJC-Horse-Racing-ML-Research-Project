@@ -173,6 +173,20 @@ def scrape_weather(
     )
 
 
+@app.command(name="scrape-trials")
+def scrape_trials(
+    limit: Annotated[int | None, typer.Option(help="Only the newest N trial dates.")] = None,
+    since: Annotated[str | None, typer.Option(help="Only trials on/after YYYY-MM-DD.")] = None,
+) -> None:
+    """Scrape barrier-trial results, idempotently (M1)."""
+    from hkjc.data import pipeline
+
+    summary = pipeline.scrape_trials(
+        limit=limit, since=date.fromisoformat(since) if since else None
+    )
+    typer.echo(f"Trials: {summary['trial_dates']} dates, {summary['trial_rows']} runs.")
+
+
 @app.command(name="scrape-holidays")
 def scrape_holidays() -> None:
     """Ingest the HK public-holiday calendar from gov.hk open data (M1)."""
@@ -198,6 +212,7 @@ def data_health() -> None:
     typer.echo(f"  people       : {s['people_rows']}")
     typer.echo(f"  weather      : {s['weather_rows']}")
     typer.echo(f"  holidays     : {s['public_holidays_rows']}")
+    typer.echo(f"  trials       : {s['barrier_trials_rows']}")
     typer.echo(f"  manifest urls: {s['manifest_urls']}")
     for season, n in sorted(s["seasons"].items()):
         typer.echo(f"    season {season}: {n} meetings")

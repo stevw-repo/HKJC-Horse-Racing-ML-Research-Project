@@ -15,6 +15,7 @@ from typing import Any
 import polars as pl
 
 from hkjc.data.models import (
+    BarrierTrialRun,
     HorseProfile,
     MeetingResults,
     PersonProfile,
@@ -34,6 +35,7 @@ VIEW_TABLES = (
     "people",
     "weather",
     "public_holidays",
+    "barrier_trials",
 )
 
 _RACES_SCHEMA: dict[str, pl.DataType] = {
@@ -148,6 +150,27 @@ _WEATHER_SCHEMA: dict[str, pl.DataType] = {
     "min_temp": pl.Float64(),
 }
 _HOLIDAYS_SCHEMA: dict[str, pl.DataType] = {"date": pl.Date(), "name": pl.String()}
+_TRIALS_SCHEMA: dict[str, pl.DataType] = {
+    "trial_date": pl.Date(),
+    "batch": pl.Int64(),
+    "location": pl.String(),
+    "venue": pl.String(),
+    "surface": pl.String(),
+    "distance_m": pl.Int64(),
+    "going": pl.String(),
+    "batch_time_s": pl.Float64(),
+    "horse_id": pl.String(),
+    "horse_name": pl.String(),
+    "jockey": pl.String(),
+    "trainer": pl.String(),
+    "draw": pl.Int64(),
+    "gear": pl.String(),
+    "lbw_raw": pl.String(),
+    "running_position_raw": pl.String(),
+    "time_s": pl.Float64(),
+    "result": pl.String(),
+    "comment": pl.String(),
+}
 _SCHEMAS = {"races": _RACES_SCHEMA, "results": _RESULTS_SCHEMA, "dividends": _DIVIDENDS_SCHEMA}
 
 
@@ -252,6 +275,17 @@ def write_holidays(raw_dir: Path, holidays: list[PublicHoliday]) -> int:
     rows = [h.model_dump() for h in holidays]
     pl.DataFrame(rows, schema=_HOLIDAYS_SCHEMA).write_parquet(
         holidays_dir / "public_holidays.parquet"
+    )
+    return len(rows)
+
+
+def write_trials(raw_dir: Path, trial_date: date, runs: list[BarrierTrialRun]) -> int:
+    """Write one trial date's runs to a per-date Parquet file; return row count."""
+    trials_dir = raw_dir / "barrier_trials"
+    trials_dir.mkdir(parents=True, exist_ok=True)
+    rows = [r.model_dump() for r in runs]
+    pl.DataFrame(rows, schema=_TRIALS_SCHEMA).write_parquet(
+        trials_dir / f"{trial_date:%Y-%m-%d}.parquet"
     )
     return len(rows)
 

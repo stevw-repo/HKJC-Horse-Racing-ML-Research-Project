@@ -121,9 +121,13 @@ climate publishes after the month completes, so very recent meetings have no wea
 
 CLI: `hkjc scrape --date YYYY-MM-DD [--force]`, `hkjc backfill [--limit N] [--since ...]`,
 `hkjc scrape-horses [--limit N]`, `hkjc scrape-people [--limit N]`,
-`hkjc scrape-weather [--since-year Y]`, `hkjc scrape-holidays`, `hkjc data-health`.
+`hkjc scrape-weather [--since-year Y]`, `hkjc scrape-holidays`,
+`hkjc scrape-trials [--limit N]`, `hkjc data-health`.
 **Public holidays** (#14) are ingested from gov.hk open data (`data/holidays.py` →
 `public_holidays` view); the feed is served with a BOM and spans only ~current +/- 1 year.
+**Barrier trials** (#4, `parse/trials.py` → `barrier_trials` view): per-batch runs from
+`btresult?date=YYYY/MM/DD` (param is `date`, not `racedate`); trials run at ST/HV/Conghua
+and do **not** link jockey/trainer ids, so those are stored as names.
 Meeting URLs (`resultsall?racedate=`) discover venue + race count without a `Racecourse`
 param; per-race URLs are `localresults?...&RaceNo=N`. Re-running a **frozen** (past) meeting
 recorded in the manifest fetches 0 rows; horse profiles are **mutable** and refetched.
@@ -132,9 +136,9 @@ recorded in the manifest fetches 0 rows; horse profiles are **mutable** and refe
 seasons (newest 2026, oldest 2024-07-27). Deep historical backfill needs a date-candidate
 generator (Wed + weekend race days, probe + record empties) or a season param.
 
-**Remaining M1:** remaining pre-race alt sources (#3 going/rail, #4 trials, #5 trackwork,
-#6 vet-list, #8 gear-change declarations; #11 pedigree captured via horse bio, #14 holidays
-done), forward race-card capture, then the full backfill + a richer coverage/gap report.
+**Remaining M1:** remaining pre-race alt sources (#3 going/rail, #5 trackwork, #6 vet-list,
+#8 gear-change declarations; #4 trials + #14 holidays done, #11 pedigree captured via horse
+bio), forward race-card capture, then the full backfill + a richer coverage/gap report.
 
 ## Milestone status
 

@@ -171,3 +171,29 @@ class PublicHoliday(BaseModel):
 
     date: date
     name: str
+
+
+class BarrierTrialRun(BaseModel):
+    """One horse's run in a barrier trial heat (pre-race signal, source #4)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    trial_date: date
+    batch: int | None = None
+    location: str | None = None  # raw, e.g. "SHA TIN ALL WEATHER TRACK"
+    venue: str | None = None  # ST / HV / CH (Conghua)
+    surface: str | None = None  # TURF / ALL WEATHER TRACK
+    distance_m: int | None = None
+    going: str | None = None
+    batch_time_s: float | None = None
+    horse_id: str | None = None
+    horse_name: str
+    jockey: str | None = None  # name only (trials don't link jockey/trainer ids)
+    trainer: str | None = None
+    draw: int | None = None
+    gear: str | None = None
+    lbw_raw: str | None = None
+    running_position_raw: str | None = None
+    time_s: float | None = None
+    result: str | None = None  # e.g. "Passed"
+    comment: str | None = None

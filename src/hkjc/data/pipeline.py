@@ -24,6 +24,7 @@ from hkjc.data.parse.results import (
     parse_race_result,
     parse_venue,
 )
+from hkjc.data.parse.trials import parse_barrier_trials
 from hkjc.data.scrape.client import Fetcher
 from hkjc.data.store.manifest import Manifest
 from hkjc.data.store.writer import (
@@ -33,6 +34,7 @@ from hkjc.data.store.writer import (
     write_horse_profile,
     write_meeting,
     write_person_profile,
+    write_trials,
     write_weather,
 )
 from hkjc.data.weather.hko import DATATYPES, VENUE_STATION, parse_climate_csv, weather_url
@@ -323,6 +325,56 @@ def ingest_weather(*, cfg: AppConfig | None = None, since_year: int = 2000) -> d
     return {"weather_rows": n_rows, "stations": len(VENUE_STATION)}
 
 
+def trial_url(base: str, day: date) -> str:
+    return f"{base}/btresult?date={day:%Y/%m/%d}"
+
+
+def list_trial_dates(cfg: AppConfig | None = None, fetcher: Fetcher | None = None) -> list[date]:
+    """Fetch the barrier-trial landing page and return all trial dates (ascending)."""
+    cfg = cfg or get_config()
+    fetcher = fetcher or Fetcher(cfg.paths.cache_dir, use_cache=False)
+    landing = fetcher.fetch(f"{cfg.sources.hkjc_base_url}/btresult")
+    return sorted(parse_meeting_dates(landing.text))
+
+
+def scrape_trials(
+    *,
+    cfg: AppConfig | None = None,
+    limit: int | None = None,
+    since: date | None = None,
+    force: bool = False,
+    on_date: Callable[[date, int], None] | None = None,
+) -> dict[str, int]:
+    """Scrape barrier-trial results per date (idempotent; past dates are frozen)."""
+    cfg = cfg or get_config()
+    base = cfg.sources.hkjc_base_url
+    fetcher = Fetcher(
+        cfg.paths.cache_dir, rate_per_sec=DEFAULT_RATE_PER_SEC, concurrency=DEFAULT_CONCURRENCY
+    )
+    dates = list_trial_dates(cfg, fetcher)
+    if since is not None:
+        dates = [d for d in dates if d >= since]
+    if limit is not None:
+        dates = dates[-limit:]
+
+    total_rows = 0
+    scraped = 0
+    with Manifest(cfg.paths.duckdb_path) as manifest:
+        for day in dates:
+            url = trial_url(base, day)
+            if day < now_hkt().date() and not force and manifest.has(url):
+                continue
+            result = fetcher.fetch(url)
+            n_rows = write_trials(cfg.paths.raw_dir, day, parse_barrier_trials(result.text, day))
+            manifest.record(url, "btresult", result.content_hash, result.status, n_rows)
+            total_rows += n_rows
+            scraped += 1
+            if on_date is not None:
+                on_date(day, n_rows)
+        refresh_views(manifest.con, cfg.paths.raw_dir)
+    return {"trial_dates": scraped, "trial_rows": total_rows}
+
+
 def ingest_holidays(*, cfg: AppConfig | None = None) -> dict[str, int]:
     """Ingest the gov.hk public-holiday calendar (#14)."""
     cfg = cfg or get_config()
@@ -349,6 +401,7 @@ def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
         "people_rows": 0,
         "weather_rows": 0,
         "public_holidays_rows": 0,
+        "barrier_trials_rows": 0,
         "meetings": 0,
         "manifest_urls": 0,
         "date_min": None,
@@ -368,6 +421,7 @@ def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
             "people",
             "weather",
             "public_holidays",
+            "barrier_trials",
         ):
             try:
                 row = con.execute(f"SELECT count(*) FROM {table}").fetchone()
