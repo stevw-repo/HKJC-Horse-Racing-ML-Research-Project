@@ -8,16 +8,17 @@ ENABLED_ALT_SOURCES = {
     "going_rail",
     "barrier_trials",
     "trackwork",
-    "vet_records",
     "sectional_archive",
-    "gear_changes",
     "racing_news",
     "pedigree",
     "public_holidays",
 }
+# #6 vet_records and #8 gear_changes dropped 2026-06-15 (forward-only sources).
 DROPPED_ALT_SOURCES = {
     "weather_stations_realtime",
     "rainfall_nowcast",
+    "vet_records",
+    "gear_changes",
     "exotic_pool_odds",
     "external_wbrr",
     "overseas_prior_form",

@@ -24,7 +24,7 @@ pari-mutuel odds, sizes stakes with Kelly variants, and **backtests honestly**.
   marks this; keep market features separate from fundamentals.
 - **Lagged text only.** Stewards' reports / comments-on-running describe the race that just
   happened → only valid as features for a horse's **prior** runs (`text_event_time <
-  race_off_time`). Pre-race vet-list may be a feature; post-race vet notes are lagged.
+  race_off_time`).
 - **As-of features only.** Every feature must be computable from `event_time ≤
   race_off_time`. A leakage canary (M2) must score ≈0 importance and ≈0 backtest ROI.
 - **Honest backtest.** Report **two ROIs**: conservative model-only and upper-bound
@@ -146,9 +146,15 @@ straight from the results meta, and `rail` is parsed from the course token (`TUR
 Course` → `C`; AWT has none). HKJC publishes no going-stick / separate rail page, so this
 is the complete #3 signal from results.
 
-**Remaining M1:** remaining pre-race alt sources (#6 vet-list, #8 gear-change declarations;
-#3 going/rail + #4 trials + #5 trackwork + #14 holidays done, #11 pedigree via horse bio),
-forward race-card capture, then the full backfill + a richer coverage/gap report.
+**Scope change 2026-06-15:** #6 vet-list and #8 gear-change declarations were **dropped**
+(forward-only / tied to declared starters; not historically backfillable). Per-run gear is
+still captured via horse-form. Race cards are **kept** (needed for M7 race-day predictions).
+
+**Remaining M1:** the historical data layer is complete (results, profiles, weather,
+holidays, trials, trackwork, going/rail). Left: **forward race-card capture** (with M7
+live-ops, when a meeting is upcoming) and the **full backfill** + a richer coverage/gap
+report. The enabled alternative sources are now: going/rail #3, barrier trials #4,
+trackwork #5, sectional archive #7, racing news #9 (M4 NLP), pedigree #11, holidays #14.
 
 ## Milestone status
 

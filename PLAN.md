@@ -20,29 +20,29 @@ This file is the plan deliverable requested by `prompt.md` (critique → roadmap
 
 ---
 
-## 0. Finalized data scope (LOCKED 2026-06-14)
+## 0. Finalized data scope (LOCKED 2026-06-14; amended 2026-06-15)
 
 This section is authoritative and supersedes any ambiguity below. The data list was reviewed and approved; the two pre-build acknowledgements (§5) are **accepted**. Machine-readable home: `config/sources.yaml` (`alternative_sources`) + `config/features.yaml` (`groups`, `horse_bio`).
+
+> **Amendment 2026-06-15:** sources **#6 veterinary/vet-list** and **#8 gear-change declarations** are **dropped** — both are forward-only (tied to an upcoming meeting's declared starters) and not historically backfillable. Per-run gear is still captured via horse-profile form records, so first-time-gear flags remain derivable. Race cards are **kept** (M7 race-day predictions need them).
 
 **Core HKJC race data (always on):** meetings, races, runners, results, full dividend table (all pools → exotics-ready), sectionals, horse/jockey/trainer profiles, plus the per-runner `internationalRating` field (free in card/results; kept as a class proxy for imports).
 
 **Horse bio — full set (from horse profile):** Country of Origin, **Age-at-race-date** (derived, not just current age), Colour, Sex, Import Type, Sire / Dam / Dam's-sire, Owner, start-of-season & current official rating.
 
-**Alternative sources — ENABLED (user picks 3,4,5,6,7,8,9,11,14):**
+**Alternative sources — ENABLED (3,4,5,7,9,11,14):**
 
 | # | Source | Primary use | Time-gating |
 |---|---|---|---|
 | 3 | Going / track-condition + **rail position** | rail position → first-class draw-bias feature | pre-race |
 | 4 | Barrier-trial results | trial form (first-starters / returnees) | pre-race |
 | 5 | Trackwork / gallop reports | work intent (rolling archive; M1 reports earliest date) | pre-race |
-| 6 | Veterinary / vet-list | soundness & fitness flags | **pre-race vet-list = feature; post-race record = lagged only** |
 | 7 | Sectional-time archive | home-grown speed figures | pre-race (of prior runs) |
-| 8 | Gear-change declarations | first-time-gear (blinkers/visor) flags | pre-race |
 | 9 | Racing news / press releases | English NLP signals, ablatable (M4) | lagged (`text_event_time < race_off_time`) |
 | 11 | Pedigree | sire / dam / dam's-sire aptitude — **HKJC on-site only, no external DBs** | static |
 | 14 | HK public-holiday / festival calendar | crowd / pool-size, day-vs-night context (gov.hk open data) | pre-race |
 
-**DROPPED / not selected:** #2 rainfall nowcast (no clean historical archive → not a training feature; dropped per user), #1 real-time weather stations, #10 exotic-pool odds (v1), #12 external WBRR ratings (per-runner field still captured), #13 overseas prior form, #15 AQHI/tide.
+**DROPPED / not selected:** **#6 veterinary/vet-list** (forward-only, dropped 2026-06-15), **#8 gear-change declarations** (forward-only, dropped 2026-06-15; per-run gear kept via horse-form), #2 rainfall nowcast (no clean historical archive), #1 real-time weather stations, #10 exotic-pool odds (v1), #12 external WBRR ratings (per-runner field still captured), #13 overseas prior form, #15 AQHI/tide.
 
 **Weather:** historical = HKO daily-climate CSV (verified). No race-day microclimate source in v1.
 
@@ -174,8 +174,6 @@ hkjc-racing/
 - `going_rail` — race_key → going description, going-stick (where available), **rail position** (#3) → draw-bias features
 - `barrier_trials` — horse_id+trial_date → trial finish/time/comment (#4)
 - `trackwork` — horse_id+work_date → gallop/work info (#5; rolling archive)
-- `vet_records` — horse_id(+race_key) → pre-race vet-list entries (feature) & post-race vet notes (lagged) (#6)
-- `gear_changes` — race_key+saddle → gear + derived first-time-gear flags (#8)
 - `pedigree` — horse_id → sire / dam / dam's-sire (#11, HKJC-only); folded into `horses` bio block
 - `public_holidays` — date → holiday/festival flags (#14, gov.hk open data)
 - racing news (#9) → flows into `text_raw` / `text_parsed` (English NLP, lagged)
@@ -209,7 +207,7 @@ hkjc-racing/
    - ✅ **Scraping HKJC/HKO public pages for personal research** is the user's call re: their terms of use; I'll be polite/rate-limited but won't make a legal determination.
 
 **Nice-to-have later:**
-- ✅ **RESOLVED 2026-06-14:** alternative sources enabled = 3,4,5,6,7,8,9,11,14; #2 dropped; full horse-bio block added (see §0).
+- ✅ **RESOLVED 2026-06-14, amended 2026-06-15:** alternative sources enabled = 3,4,5,7,9,11,14; #2 dropped; **#6 vet-list & #8 gear-change declarations dropped (forward-only)**; full horse-bio block added (see §0).
 - ✅ **CONFIRMED:** MLflow-local (not W&B).
 - Decide later whether to **enable the legacy-season parser** and/or **pull the live-odds logger earlier** (next uncapturable meeting: 21 Jun 2026).
 - Any **segments you suspect hold edge** (class/distance/going/field-size) to prioritize in analysis.
@@ -221,9 +219,9 @@ Legend: ✅ enabled · ⬜ not enabled.
 3. ✅ **HKJC going-stick / track-condition & rail-position reports** — rail position strongly affects draw bias.
 4. ✅ **HKJC barrier-trial results** — trial form, a strong public pre-race signal.
 5. ✅ **HKJC trackwork / gallop reports** — recent work intensity/intent. *(Rolling archive; M1 reports earliest date.)*
-6. ✅ **HKJC veterinary / horses-on-vet-list** — soundness & fitness flags. *(Pre-race vet-list = feature; post-race record = lagged only.)*
+6. ⬜ **HKJC veterinary / horses-on-vet-list** — soundness & fitness flags. *(Dropped 2026-06-15: forward-only, tied to declared starters; not historically backfillable.)*
 7. ✅ **HKJC sectional-time archive** — basis for home-grown speed figures.
-8. ✅ **HKJC gear-change declarations** — first-time blinkers/visors etc.
+8. ⬜ **HKJC gear-change declarations** — first-time blinkers/visors etc. *(Dropped 2026-06-15: forward-only; per-run gear kept via horse-form, so first-time-gear stays derivable.)*
 9. ✅ **HKJC racing news / press releases** — trainer comments, intentions (English NLP, M4).
 10. ⬜ **GraphQL exotic-pool odds/investments** (QIN/QPL/FCT/TRI/…) — market-structure & liquidity signals.
 11. ✅ **Pedigree data (HKJC profile sire/dam)** — distance/going aptitude. *(HKJC on-site only; external pedigree DBs NOT used.)*

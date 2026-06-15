@@ -11,7 +11,7 @@ features:
     weight:         { enabled: true }
     class_moves:    { enabled: true }
     days_since_run: { enabled: true }
-    gear:           { enabled: true }   # first-time-gear flags (#8)
+    gear:           { enabled: true }   # gear flags derived from horse-form per-run gear (source #8 dropped)
     going_track:    { enabled: true }   # (#3)
     weather:        { enabled: true }   # HKO daily-climate
     seasonality:    { enabled: true }
@@ -19,7 +19,7 @@ features:
     pedigree:       { enabled: true }   # sire/dam/dam's-sire (#11, HKJC-only)
     trial_form:     { enabled: true }   # barrier trials (#4)
     trackwork:      { enabled: true }   # (#5)
-    vet_flags:      { enabled: true }   # pre-race vet-list (#6)
+    vet_flags:      { enabled: false }  # source #6 dropped 2026-06-15 (forward-only)
     public_holiday: { enabled: true }   # (#14)
     nlp_text:       { enabled: true, ablatable: true }   # M4, lagged
     market:         { enabled: true, wall: true }        # walled off from fundamentals
