@@ -50,7 +50,9 @@ def test_parse_race_winner() -> None:
     assert winner.horse_id == "HK_2022_H447"
     assert winner.horse_name == "FAMILY FORTUNE"
     assert winner.jockey_code == "MOJ"
+    assert winner.jockey_name == "J Moreira"  # name captured even when code is absent (old pages)
     assert winner.trainer_code == "FC"
+    assert winner.trainer_name == "C Fownes"
     assert winner.actual_weight == 133
     assert winner.draw == 1
     assert winner.win_odds == 2.7  # SP = market closing line

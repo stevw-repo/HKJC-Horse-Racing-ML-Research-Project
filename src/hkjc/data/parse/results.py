@@ -178,9 +178,11 @@ def _parse_runners(tables: list[Node]) -> list[RunnerResult]:
                 jockey_code=id_from_node(jockey_node, "jockeyid")
                 if jockey_node is not None
                 else None,
+                jockey_name=_node_text(jockey_node) or None,
                 trainer_code=(
                     id_from_node(trainer_node, "trainerid") if trainer_node is not None else None
                 ),
+                trainer_name=_node_text(trainer_node) or None,
                 actual_weight=to_int(_node_text(by_key.get("act_wt"))),
                 declared_weight=to_int(_node_text(by_key.get("declar_wt"))),
                 draw=to_int(_node_text(by_key.get("draw"))),

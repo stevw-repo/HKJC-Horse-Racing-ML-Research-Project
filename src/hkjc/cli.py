@@ -111,10 +111,12 @@ def scrape(
 @app.command()
 def backfill(
     limit: Annotated[int | None, typer.Option(help="Only the newest N meetings.")] = None,
-    since: Annotated[str | None, typer.Option(help="Only meetings on/after YYYY-MM-DD.")] = None,
+    since: Annotated[
+        str | None, typer.Option(help="Start enumeration at YYYY-MM-DD (default ~2006-09).")
+    ] = None,
     force: Annotated[bool, typer.Option(help="Re-fetch even if already stored.")] = False,
 ) -> None:
-    """Backfill meetings from the results dropdown, idempotently (M1)."""
+    """Backfill meetings from the fixtures calendar (idempotent, back to ~2006) (M1)."""
     from hkjc.data import pipeline
 
     def _progress(rep: pipeline.ScrapeReport) -> None:

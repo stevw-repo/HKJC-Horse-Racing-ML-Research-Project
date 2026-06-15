@@ -17,6 +17,7 @@ from hkjc.common.config import AppConfig, get_config
 from hkjc.common.time import now_hkt
 from hkjc.data.holidays import parse_holidays
 from hkjc.data.models import MeetingResults, WeatherDaily
+from hkjc.data.parse.fixtures import parse_fixture_meeting_days
 from hkjc.data.parse.profiles import parse_horse_profile, parse_person_profile
 from hkjc.data.parse.results import (
     count_races,
@@ -128,11 +129,63 @@ def scrape_meeting(
 
 
 def list_meeting_dates(cfg: AppConfig | None = None, fetcher: Fetcher | None = None) -> list[date]:
-    """Fetch the results landing page and return all meeting dates (ascending)."""
+    """Recent meeting dates from the results ``selectId`` dropdown (~2 seasons only).
+
+    For full historical enumeration use :func:`list_fixture_dates` (the dropdown does not
+    list dates older than ~2 seasons, even though the result pages themselves exist).
+    """
     cfg = cfg or get_config()
     fetcher = fetcher or Fetcher(cfg.paths.cache_dir, use_cache=False)
     landing = fetcher.fetch(f"{cfg.sources.hkjc_base_url}/localresults")
     return sorted(parse_meeting_dates(landing.text))
+
+
+DEFAULT_BACKFILL_START = date(2006, 9, 1)  # ~earliest fixtures-calendar coverage
+
+
+def fixture_url(base: str, year: int, month: int) -> str:
+    return f"{base}/fixture?calyear={year}&calmonth={month:02d}"
+
+
+def _iter_year_months(start: date, end: date) -> list[tuple[int, int]]:
+    months: list[tuple[int, int]] = []
+    year, month = start.year, start.month
+    while (year, month) <= (end.year, end.month):
+        months.append((year, month))
+        month += 1
+        if month > 12:
+            year, month = year + 1, 1
+    return months
+
+
+def list_fixture_dates(
+    *,
+    cfg: AppConfig | None = None,
+    start: date = DEFAULT_BACKFILL_START,
+    end: date | None = None,
+    fetcher: Fetcher | None = None,
+) -> list[date]:
+    """Enumerate every meeting date in ``[start, end]`` from the fixtures calendar.
+
+    Authoritative back to ~2006 via ``fixture?calyear=Y&calmonth=M`` (one request per month).
+    """
+    cfg = cfg or get_config()
+    end = end or now_hkt().date()
+    fetcher = fetcher or Fetcher(
+        cfg.paths.cache_dir, rate_per_sec=DEFAULT_RATE_PER_SEC, concurrency=DEFAULT_CONCURRENCY
+    )
+    months = _iter_year_months(start, end)
+    results = fetcher.fetch_many([fixture_url(cfg.sources.hkjc_base_url, y, m) for y, m in months])
+    dates: list[date] = []
+    for (year, month), result in zip(months, results, strict=True):
+        for day in parse_fixture_meeting_days(result.text):
+            try:
+                meeting_day = date(year, month, day)
+            except ValueError:
+                continue
+            if start <= meeting_day <= end:
+                dates.append(meeting_day)
+    return sorted(set(dates))
 
 
 def backfill(
@@ -143,14 +196,15 @@ def backfill(
     force: bool = False,
     on_meeting: Callable[[ScrapeReport], None] | None = None,
 ) -> list[ScrapeReport]:
-    """Scrape every meeting from the dropdown (idempotent). ``limit`` keeps the newest N."""
+    """Scrape every meeting from the fixtures calendar (idempotent, back to ~2006).
+
+    ``since`` sets the start of enumeration (default ~2006-09); ``limit`` keeps the newest N.
+    """
     cfg = cfg or get_config()
     fetcher = Fetcher(
         cfg.paths.cache_dir, rate_per_sec=DEFAULT_RATE_PER_SEC, concurrency=DEFAULT_CONCURRENCY
     )
-    dates = list_meeting_dates(cfg, fetcher)
-    if since is not None:
-        dates = [d for d in dates if d >= since]
+    dates = list_fixture_dates(cfg=cfg, start=since or DEFAULT_BACKFILL_START, fetcher=fetcher)
     if limit is not None:
         dates = dates[-limit:]
 

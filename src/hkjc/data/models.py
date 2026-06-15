@@ -23,8 +23,10 @@ class RunnerResult(BaseModel):
     saddle: int
     horse_id: str | None
     horse_name: str
-    jockey_code: str | None
+    jockey_code: str | None  # None for retired persons (unlinked on old pages); see jockey_name
+    jockey_name: str | None = None
     trainer_code: str | None
+    trainer_name: str | None = None
     actual_weight: int | None  # lbs carried
     declared_weight: int | None  # declared horse weight (lbs)
     draw: int | None

@@ -121,7 +121,6 @@ climate publishes after the month completes, so very recent meetings have no wea
 
 CLI: `hkjc scrape --date YYYY-MM-DD [--force]`, `hkjc backfill [--limit N] [--since ...]`,
 `hkjc scrape-horses [--limit N]`, `hkjc scrape-people [--limit N]`,
-`hkjc scrape-horses [--limit N]`, `hkjc scrape-people [--limit N]`,
 `hkjc scrape-weather [--since-year Y]`, `hkjc scrape-holidays`,
 `hkjc scrape-trials [--limit N]`, `hkjc scrape-trackwork [--limit N]`, `hkjc data-health`.
 **Public holidays** (#14) are ingested from gov.hk open data (`data/holidays.py` →
@@ -137,9 +136,13 @@ Meeting URLs (`resultsall?racedate=`) discover venue + race count without a `Rac
 param; per-race URLs are `localresults?...&RaceNo=N`. Re-running a **frozen** (past) meeting
 recorded in the manifest fetches 0 rows; horse profiles are **mutable** and refetched.
 
-**Open item before the full backfill:** the results `selectId` dropdown only lists ~2
-seasons (newest 2026, oldest 2024-07-27). Deep historical backfill needs a date-candidate
-generator (Wed + weekend race days, probe + record empties) or a season param.
+**Historical enumeration (RESOLVED 2026-06-15):** the results `selectId` dropdown only lists
+~2 recent seasons, but the **fixtures calendar** covers the full history —
+`fixture?calyear=Y&calmonth=M` (`parse/fixtures.py`, `<td class="calendar">` day cells) lists
+meeting days back to ~2006. `pipeline.list_fixture_dates` drives `hkjc backfill` (default
+start ~2006-09; `--since` to bound). Caveat: on old result pages HKJC only hyperlinks
+**currently-active** jockeys/trainers, so `jockey_code`/`trainer_code` are partial for old
+meetings — the always-present `jockey_name`/`trainer_name` text is captured alongside.
 
 **Going/rail** (#3): `going` and `rail` are first-class on the `races` view — going comes
 straight from the results meta, and `rail` is parsed from the course token (`TURF - "C"
