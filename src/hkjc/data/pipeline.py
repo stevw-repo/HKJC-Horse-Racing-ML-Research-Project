@@ -15,7 +15,7 @@ import duckdb
 
 from hkjc.common.config import AppConfig, get_config
 from hkjc.common.time import now_hkt
-from hkjc.data.models import MeetingResults
+from hkjc.data.models import MeetingResults, WeatherDaily
 from hkjc.data.parse.profiles import parse_horse_profile, parse_person_profile
 from hkjc.data.parse.results import (
     count_races,
@@ -31,7 +31,9 @@ from hkjc.data.store.writer import (
     write_horse_profile,
     write_meeting,
     write_person_profile,
+    write_weather,
 )
+from hkjc.data.weather.hko import DATATYPES, VENUE_STATION, parse_climate_csv, weather_url
 
 DEFAULT_RATE_PER_SEC = 5.0
 DEFAULT_CONCURRENCY = 4
@@ -273,6 +275,52 @@ def scrape_people(
     return {"people": len(pairs), "jockeys": jockeys, "trainers": trainers}
 
 
+def ingest_weather(*, cfg: AppConfig | None = None, since_year: int = 2000) -> dict[str, int]:
+    """Ingest HKO daily-climate temperature series for both venues (mapped stations).
+
+    Each station's full history is one request; rows older than ``since_year`` are dropped.
+    """
+    cfg = cfg or get_config()
+    api = cfg.sources.hko_weather_api
+    fetcher = Fetcher(
+        cfg.paths.cache_dir, rate_per_sec=DEFAULT_RATE_PER_SEC, concurrency=DEFAULT_CONCURRENCY
+    )
+    data_types = list(DATATYPES.items())  # [(CLMTEMP, mean_temp), ...]
+    records: list[WeatherDaily] = []
+    with Manifest(cfg.paths.duckdb_path) as manifest:
+        for venue, station in VENUE_STATION.items():
+            results = fetcher.fetch_many([weather_url(api, station, dt) for dt, _ in data_types])
+            series: dict[str, dict[date, float]] = {}
+            for (_dt, field), result in zip(data_types, results, strict=True):
+                series[field] = parse_climate_csv(result.text)
+                manifest.record(
+                    result.url,
+                    "hko_weather",
+                    result.content_hash,
+                    result.status,
+                    len(series[field]),
+                )
+            all_dates: set[date] = set()
+            for values in series.values():
+                all_dates.update(values)
+            for day in sorted(all_dates):
+                if day.year < since_year:
+                    continue
+                records.append(
+                    WeatherDaily(
+                        date=day,
+                        station=station,
+                        venue=venue,
+                        mean_temp=series["mean_temp"].get(day),
+                        max_temp=series["max_temp"].get(day),
+                        min_temp=series["min_temp"].get(day),
+                    )
+                )
+        n_rows = write_weather(cfg.paths.raw_dir, records)
+        refresh_views(manifest.con, cfg.paths.raw_dir)
+    return {"weather_rows": n_rows, "stations": len(VENUE_STATION)}
+
+
 def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
     """Summarize stored coverage from the DuckDB views (for the data-health report)."""
     cfg = cfg or get_config()
@@ -283,6 +331,7 @@ def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
         "horses_rows": 0,
         "horse_form_rows": 0,
         "people_rows": 0,
+        "weather_rows": 0,
         "meetings": 0,
         "manifest_urls": 0,
         "date_min": None,
@@ -293,7 +342,7 @@ def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
         return summary
     con = duckdb.connect(str(cfg.paths.duckdb_path))
     try:
-        for table in ("races", "results", "dividends", "horses", "horse_form", "people"):
+        for table in ("races", "results", "dividends", "horses", "horse_form", "people", "weather"):
             try:
                 row = con.execute(f"SELECT count(*) FROM {table}").fetchone()
                 summary[f"{table}_rows"] = int(row[0]) if row else 0

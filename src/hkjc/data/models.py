@@ -149,3 +149,16 @@ class PersonProfile(BaseModel):
     win_pct: float | None = None  # percentage value, e.g. 16.55
     stakes: int | None = None
     wins_last10: int | None = None
+
+
+class WeatherDaily(BaseModel):
+    """One day's HKO daily-climate reading at a station, mapped to a venue."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    date: date
+    station: str  # HKO / SHA
+    venue: str  # HV (HKO) / ST (SHA)
+    mean_temp: float | None = None
+    max_temp: float | None = None
+    min_temp: float | None = None

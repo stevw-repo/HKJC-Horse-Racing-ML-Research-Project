@@ -160,6 +160,19 @@ def scrape_people(
     )
 
 
+@app.command(name="scrape-weather")
+def scrape_weather(
+    since_year: Annotated[int, typer.Option(help="Keep daily climate from this year on.")] = 2000,
+) -> None:
+    """Ingest HKO daily-climate temperature for both venues' stations (M1)."""
+    from hkjc.data import pipeline
+
+    summary = pipeline.ingest_weather(since_year=since_year)
+    typer.echo(
+        f"Weather: {summary['weather_rows']} daily rows across {summary['stations']} stations."
+    )
+
+
 @app.command(name="data-health")
 def data_health() -> None:
     """Show stored data coverage and the manifest size (M1)."""
@@ -174,6 +187,7 @@ def data_health() -> None:
     typer.echo(f"  horses       : {s['horses_rows']}")
     typer.echo(f"  horse form   : {s['horse_form_rows']}")
     typer.echo(f"  people       : {s['people_rows']}")
+    typer.echo(f"  weather      : {s['weather_rows']}")
     typer.echo(f"  manifest urls: {s['manifest_urls']}")
     for season, n in sorted(s["seasons"].items()):
         typer.echo(f"    season {season}: {n} meetings")
