@@ -146,6 +146,20 @@ def scrape_horses(
     typer.echo(f"Horses: {summary['horses']} profiles, {summary['form_rows']} form rows.")
 
 
+@app.command(name="scrape-people")
+def scrape_people(
+    limit: Annotated[int | None, typer.Option(help="Only the first N jockeys/trainers.")] = None,
+) -> None:
+    """Scrape jockey + trainer profiles for people seen in stored results (M1)."""
+    from hkjc.data import pipeline
+
+    summary = pipeline.scrape_people(limit=limit)
+    typer.echo(
+        f"People: {summary['people']} profiles "
+        f"({summary['jockeys']} jockeys, {summary['trainers']} trainers)."
+    )
+
+
 @app.command(name="data-health")
 def data_health() -> None:
     """Show stored data coverage and the manifest size (M1)."""
@@ -159,6 +173,7 @@ def data_health() -> None:
     typer.echo(f"  dividends    : {s['dividends_rows']}")
     typer.echo(f"  horses       : {s['horses_rows']}")
     typer.echo(f"  horse form   : {s['horse_form_rows']}")
+    typer.echo(f"  people       : {s['people_rows']}")
     typer.echo(f"  manifest urls: {s['manifest_urls']}")
     for season, n in sorted(s["seasons"].items()):
         typer.echo(f"    season {season}: {n} meetings")

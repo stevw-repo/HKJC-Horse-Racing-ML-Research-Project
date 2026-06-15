@@ -16,7 +16,7 @@ import duckdb
 from hkjc.common.config import AppConfig, get_config
 from hkjc.common.time import now_hkt
 from hkjc.data.models import MeetingResults
-from hkjc.data.parse.profiles import parse_horse_profile
+from hkjc.data.parse.profiles import parse_horse_profile, parse_person_profile
 from hkjc.data.parse.results import (
     count_races,
     parse_meeting_dates,
@@ -25,7 +25,13 @@ from hkjc.data.parse.results import (
 )
 from hkjc.data.scrape.client import Fetcher
 from hkjc.data.store.manifest import Manifest
-from hkjc.data.store.writer import refresh_views, season_label, write_horse_profile, write_meeting
+from hkjc.data.store.writer import (
+    refresh_views,
+    season_label,
+    write_horse_profile,
+    write_meeting,
+    write_person_profile,
+)
 
 DEFAULT_RATE_PER_SEC = 5.0
 DEFAULT_CONCURRENCY = 4
@@ -203,6 +209,70 @@ def scrape_horses(
     return {"horses": len(ids), "form_rows": total_form}
 
 
+def person_url(base: str, role: str, code: str) -> str:
+    if role == "jockey":
+        return f"{base}/jockeyprofile?jockeyid={code}&Season=Current"
+    return f"{base}/trainerprofile?trainerid={code}&Season=Current"
+
+
+def stored_person_codes(cfg: AppConfig | None = None) -> list[tuple[str, str]]:
+    """Distinct (role, code) jockey/trainer pairs seen in stored results."""
+    cfg = cfg or get_config()
+    if not cfg.paths.duckdb_path.is_file():
+        return []
+    con = duckdb.connect(str(cfg.paths.duckdb_path))
+    pairs: list[tuple[str, str]] = []
+    try:
+        for role, column in (("jockey", "jockey_code"), ("trainer", "trainer_code")):
+            try:
+                rows = con.execute(
+                    f"SELECT DISTINCT {column} FROM results "
+                    f"WHERE {column} IS NOT NULL ORDER BY {column}"
+                ).fetchall()
+            except duckdb.Error:
+                continue
+            pairs.extend((role, str(r[0])) for r in rows)
+    finally:
+        con.close()
+    return pairs
+
+
+def scrape_people(
+    *,
+    cfg: AppConfig | None = None,
+    codes: list[tuple[str, str]] | None = None,
+    limit: int | None = None,
+    on_person: Callable[[str, str], None] | None = None,
+) -> dict[str, int]:
+    """Scrape jockey/trainer profiles for ``(role, code)`` pairs (default: all in results)."""
+    cfg = cfg or get_config()
+    base = cfg.sources.hkjc_base_url
+    pairs = codes if codes is not None else stored_person_codes(cfg)
+    if limit is not None:
+        pairs = pairs[:limit]
+    if not pairs:
+        return {"people": 0, "jockeys": 0, "trainers": 0}
+
+    fetcher = Fetcher(
+        cfg.paths.cache_dir, rate_per_sec=DEFAULT_RATE_PER_SEC, concurrency=DEFAULT_CONCURRENCY
+    )
+    results = fetcher.fetch_many([person_url(base, role, code) for role, code in pairs])
+    jockeys = 0
+    trainers = 0
+    with Manifest(cfg.paths.duckdb_path) as manifest:
+        for (role, code), result in zip(pairs, results, strict=True):
+            write_person_profile(cfg.paths.raw_dir, parse_person_profile(result.text, code, role))
+            manifest.record(result.url, role, result.content_hash, result.status, 1)
+            if role == "jockey":
+                jockeys += 1
+            else:
+                trainers += 1
+            if on_person is not None:
+                on_person(role, code)
+        refresh_views(manifest.con, cfg.paths.raw_dir)
+    return {"people": len(pairs), "jockeys": jockeys, "trainers": trainers}
+
+
 def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
     """Summarize stored coverage from the DuckDB views (for the data-health report)."""
     cfg = cfg or get_config()
@@ -212,6 +282,7 @@ def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
         "dividends_rows": 0,
         "horses_rows": 0,
         "horse_form_rows": 0,
+        "people_rows": 0,
         "meetings": 0,
         "manifest_urls": 0,
         "date_min": None,
@@ -222,7 +293,7 @@ def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
         return summary
     con = duckdb.connect(str(cfg.paths.duckdb_path))
     try:
-        for table in ("races", "results", "dividends", "horses", "horse_form"):
+        for table in ("races", "results", "dividends", "horses", "horse_form", "people"):
             try:
                 row = con.execute(f"SELECT count(*) FROM {table}").fetchone()
                 summary[f"{table}_rows"] = int(row[0]) if row else 0

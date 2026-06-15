@@ -127,3 +127,25 @@ class HorseProfile(BaseModel):
     season_stakes: int | None = None
     total_stakes: int | None = None
     form: list[HorseFormRun] = Field(default_factory=list)
+
+
+class PersonProfile(BaseModel):
+    """Jockey or trainer current-season profile (strike-rate inputs)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    role: str  # "jockey" | "trainer"
+    name: str | None = None
+    age: int | None = None
+    nationality: str | None = None
+    season: str | None = None  # e.g. "25/26"
+    up_to_date: date | None = None  # "Up to Race Meeting of ..."
+    wins: int | None = None
+    seconds: int | None = None
+    thirds: int | None = None
+    fourths: int | None = None
+    total_starts: int | None = None  # rides (jockey) / runners (trainer)
+    win_pct: float | None = None  # percentage value, e.g. 16.55
+    stakes: int | None = None
+    wins_last10: int | None = None

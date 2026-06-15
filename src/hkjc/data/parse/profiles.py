@@ -8,13 +8,15 @@ Each form row carries the ``RaceIndex`` that joins back to a stored ``RaceResult
 from __future__ import annotations
 
 import re
+from datetime import date
 
 from selectolax.parser import HTMLParser, Node
 
-from hkjc.data.models import HorseFormRun, HorseProfile
+from hkjc.data.models import HorseFormRun, HorseProfile, PersonProfile
 from hkjc.data.parse.common import (
     clean,
     id_from_node,
+    parse_dmy,
     parse_dmy2,
     parse_time_to_seconds,
     to_float,
@@ -164,6 +166,73 @@ def _parse_form(tree: HTMLParser) -> list[HorseFormRun]:
             )
         )
     return runs
+
+
+_SEASON_RE = re.compile(r"(\d{2}/\d{2})\s*Season")
+_UPTO_RE = re.compile(r"Meeting of\s*(\d{2}/\d{2}/\d{4})")
+_AGE_RE = re.compile(r"Age:\s*(\d+)")
+
+
+def _stats_pairs(table: Node) -> dict[str, str]:
+    """Extract ``label : value`` pairs from a jockey/trainer season-stats table."""
+    pairs: dict[str, str] = {}
+    for row in table.css("tr"):
+        cells = [clean(c.text()) for c in row.css("td,th")]
+        i = 0
+        while i < len(cells) - 1:
+            label, value = cells[i], cells[i + 1]
+            if label and value.startswith(":"):
+                pairs[_norm(label)] = value.lstrip(":").strip()
+                i += 2
+            else:
+                i += 1
+    return pairs
+
+
+def parse_person_profile(html: str, code: str, role: str) -> PersonProfile:
+    """Parse a jockey (``role='jockey'``) or trainer (``role='trainer'``) profile page."""
+    tree = HTMLParser(html)
+    tables = tree.css("table")
+    name: str | None = None
+    age: int | None = None
+    if tables:
+        header_cells = tables[0].css("td,th")
+        if header_cells:
+            name = clean(header_cells[0].text()) or None
+        if (m := _AGE_RE.search(clean(tables[0].text()))) is not None:
+            age = int(m.group(1))
+
+    pairs: dict[str, str] = {}
+    season: str | None = None
+    up_to: date | None = None
+    stats_tables = _tables_with_class(tree, "table_bd")
+    if stats_tables:
+        table = stats_tables[0]
+        rows = table.css("tr")
+        header = clean(rows[0].text()) if rows else ""
+        if (sm := _SEASON_RE.search(header)) is not None:
+            season = sm.group(1)
+        if (um := _UPTO_RE.search(header)) is not None:
+            up_to = parse_dmy(um.group(1))
+        pairs = _stats_pairs(table)
+
+    return PersonProfile(
+        code=code,
+        role=role,
+        name=name,
+        age=age,
+        nationality=pairs.get("nationality") or None,
+        season=season,
+        up_to_date=up_to,
+        wins=to_int(pairs.get("noofwins")),
+        seconds=to_int(pairs.get("noof2nds")),
+        thirds=to_int(pairs.get("noof3rds")),
+        fourths=to_int(pairs.get("noof4ths")),
+        total_starts=to_int(pairs.get("totalrides") or pairs.get("totalrunners")),
+        win_pct=to_float((pairs.get("win") or "").rstrip("%")),
+        stakes=to_int(pairs.get("stakeswon")),
+        wins_last10=to_int(pairs.get("noofwinsinpast10racedays")),
+    )
 
 
 def parse_horse_profile(html: str, horse_id: str) -> HorseProfile:

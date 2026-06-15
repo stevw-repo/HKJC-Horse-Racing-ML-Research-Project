@@ -14,12 +14,12 @@ from typing import Any
 
 import polars as pl
 
-from hkjc.data.models import HorseProfile, MeetingResults
+from hkjc.data.models import HorseProfile, MeetingResults, PersonProfile
 
 # Meeting-partitioned tables (written by write_meeting).
 TABLES = ("races", "results", "dividends")
-# All tables exposed as DuckDB views (meeting tables + per-horse profile tables).
-VIEW_TABLES = ("races", "results", "dividends", "horses", "horse_form")
+# All tables exposed as DuckDB views (meeting tables + per-horse + per-person profiles).
+VIEW_TABLES = ("races", "results", "dividends", "horses", "horse_form", "people")
 
 _RACES_SCHEMA: dict[str, pl.DataType] = {
     "race_date": pl.Date(),
@@ -107,6 +107,23 @@ _HORSE_FORM_SCHEMA: dict[str, pl.DataType] = {
     "declared_weight": pl.Int64(),
     "gear": pl.String(),
 }
+_PEOPLE_SCHEMA: dict[str, pl.DataType] = {
+    "code": pl.String(),
+    "role": pl.String(),
+    "name": pl.String(),
+    "age": pl.Int64(),
+    "nationality": pl.String(),
+    "season": pl.String(),
+    "up_to_date": pl.Date(),
+    "wins": pl.Int64(),
+    "seconds": pl.Int64(),
+    "thirds": pl.Int64(),
+    "fourths": pl.Int64(),
+    "total_starts": pl.Int64(),
+    "win_pct": pl.Float64(),
+    "stakes": pl.Int64(),
+    "wins_last10": pl.Int64(),
+}
 _SCHEMAS = {"races": _RACES_SCHEMA, "results": _RESULTS_SCHEMA, "dividends": _DIVIDENDS_SCHEMA}
 
 
@@ -184,6 +201,15 @@ def write_horse_profile(raw_dir: Path, profile: HorseProfile) -> int:
         form_dir / f"{profile.horse_id}.parquet"
     )
     return len(form_rows)
+
+
+def write_person_profile(raw_dir: Path, profile: PersonProfile) -> None:
+    """Write one jockey/trainer profile to a per-person Parquet file (mutable, overwritten)."""
+    people_dir = raw_dir / "people"
+    people_dir.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame([profile.model_dump()], schema=_PEOPLE_SCHEMA).write_parquet(
+        people_dir / f"{profile.role}_{profile.code}.parquet"
+    )
 
 
 def refresh_views(con: Any, raw_dir: Path) -> None:

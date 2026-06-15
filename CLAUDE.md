@@ -110,8 +110,12 @@ pre-race fundamentals, because **race cards are forward-only** — HKJC removes 
 card once results publish, so cards cannot be backfilled (capture upcoming cards going
 forward, for race-day/M7).
 
+**Jockey/trainer profiles** are built too (`parse_person_profile` → `people` view): one
+parser for both roles capturing current-season strike-rate inputs (wins/2-3-4ths, rides or
+runners, win %, stakes).
+
 CLI: `hkjc scrape --date YYYY-MM-DD [--force]`, `hkjc backfill [--limit N] [--since ...]`,
-`hkjc scrape-horses [--limit N]` (profiles all horses seen in results), `hkjc data-health`.
+`hkjc scrape-horses [--limit N]`, `hkjc scrape-people [--limit N]`, `hkjc data-health`.
 Meeting URLs (`resultsall?racedate=`) discover venue + race count without a `Racecourse`
 param; per-race URLs are `localresults?...&RaceNo=N`. Re-running a **frozen** (past) meeting
 recorded in the manifest fetches 0 rows; horse profiles are **mutable** and refetched.
@@ -120,10 +124,9 @@ recorded in the manifest fetches 0 rows; horse profiles are **mutable** and refe
 seasons (newest 2026, oldest 2024-07-27). Deep historical backfill needs a date-candidate
 generator (Wed + weekend race days, probe + record empties) or a season param.
 
-**Remaining M1:** jockey/trainer profiles, enabled pre-race alt sources (#3 going/rail,
-#4 trials, #5 trackwork, #6 vet-list, #8 gear, #14 holidays; #11 pedigree is captured via
-horse bio), HKO weather CSV, forward race-card capture, then the full backfill + a richer
-coverage/gap report.
+**Remaining M1:** enabled pre-race alt sources (#3 going/rail, #4 trials, #5 trackwork,
+#6 vet-list, #8 gear, #14 holidays; #11 pedigree is captured via horse bio), HKO weather
+CSV, forward race-card capture, then the full backfill + a richer coverage/gap report.
 
 ## Milestone status
 

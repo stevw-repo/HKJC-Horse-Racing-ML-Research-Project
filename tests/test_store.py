@@ -13,6 +13,7 @@ from hkjc.data.models import (
     HorseFormRun,
     HorseProfile,
     MeetingResults,
+    PersonProfile,
     RaceResult,
     RunnerResult,
 )
@@ -22,6 +23,7 @@ from hkjc.data.store.writer import (
     season_label,
     write_horse_profile,
     write_meeting,
+    write_person_profile,
 )
 
 
@@ -155,6 +157,23 @@ def test_write_horse_profile_and_views(tmp_path: Path) -> None:
         refresh_views(con, raw)
         assert _scalar(con, "SELECT current_rating FROM horses") == 43
         assert _scalar(con, "SELECT rating FROM horse_form WHERE race_index = 745") == 37
+    finally:
+        con.close()
+
+
+def test_write_person_profile_and_view(tmp_path: Path) -> None:
+    raw = tmp_path / "raw"
+    write_person_profile(
+        raw,
+        PersonProfile(
+            code="MOJ", role="jockey", name="Joao Moreira", wins=23, total_starts=139, win_pct=16.55
+        ),
+    )
+    con = duckdb.connect()
+    try:
+        refresh_views(con, raw)
+        assert _scalar(con, "SELECT wins FROM people WHERE code = 'MOJ'") == 23
+        assert _scalar(con, "SELECT role FROM people WHERE code = 'MOJ'") == "jockey"
     finally:
         con.close()
 
