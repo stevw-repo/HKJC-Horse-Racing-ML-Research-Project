@@ -52,6 +52,7 @@ _RACES_SCHEMA: dict[str, pl.DataType] = {
     "prize_hkd": pl.Int64(),
     "going": pl.String(),
     "course": pl.String(),
+    "rail": pl.String(),
     "surface": pl.String(),
     "final_time_s": pl.Float64(),
 }
@@ -211,6 +212,7 @@ def _flatten(
                 "prize_hkd": race.prize_hkd,
                 "going": race.going,
                 "course": race.course,
+                "rail": race.rail,
                 "surface": race.surface,
                 "final_time_s": race.final_time_s,
             }

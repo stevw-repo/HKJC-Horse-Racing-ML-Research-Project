@@ -36,6 +36,7 @@ def test_parse_race_meta() -> None:
     assert race.race_class == "Class 5"
     assert race.going == "GOOD TO FIRM"
     assert race.surface == "TURF"
+    assert race.rail == "C"  # draw-bias input (#3), parsed from the course token
     assert race.prize_hkd == 875000
     assert race.final_time_s is not None and abs(race.final_time_s - 98.85) < 0.01
 

@@ -141,9 +141,14 @@ recorded in the manifest fetches 0 rows; horse profiles are **mutable** and refe
 seasons (newest 2026, oldest 2024-07-27). Deep historical backfill needs a date-candidate
 generator (Wed + weekend race days, probe + record empties) or a season param.
 
-**Remaining M1:** remaining pre-race alt sources (#3 going/rail, #6 vet-list, #8 gear-change
-declarations; #4 trials + #5 trackwork + #14 holidays done, #11 pedigree captured via horse
-bio), forward race-card capture, then the full backfill + a richer coverage/gap report.
+**Going/rail** (#3): `going` and `rail` are first-class on the `races` view — going comes
+straight from the results meta, and `rail` is parsed from the course token (`TURF - "C"
+Course` → `C`; AWT has none). HKJC publishes no going-stick / separate rail page, so this
+is the complete #3 signal from results.
+
+**Remaining M1:** remaining pre-race alt sources (#6 vet-list, #8 gear-change declarations;
+#3 going/rail + #4 trials + #5 trackwork + #14 holidays done, #11 pedigree via horse bio),
+forward race-card capture, then the full backfill + a richer coverage/gap report.
 
 ## Milestone status
 

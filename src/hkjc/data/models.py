@@ -60,6 +60,7 @@ class RaceResult(BaseModel):
     prize_hkd: int | None = None
     going: str | None = None
     course: str | None = None  # e.g. 'TURF - "C" Course'
+    rail: str | None = None  # rail position from the course token, e.g. "C", "A+3" (#3)
     surface: str | None = None  # TURF / ALL WEATHER TRACK
     final_time_s: float | None = None
     runners: list[RunnerResult]

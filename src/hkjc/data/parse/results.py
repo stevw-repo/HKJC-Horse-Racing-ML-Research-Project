@@ -40,6 +40,7 @@ class _Meta(TypedDict, total=False):
     prize_hkd: int | None
     going: str | None
     course: str | None
+    rail: str | None
     surface: str | None
 
 
@@ -261,6 +262,8 @@ def _parse_meta(tables: list[Node]) -> _Meta:
             elif label == "Course":
                 meta["course"] = value or None
                 meta["surface"] = _surface(value)
+                rail_match = re.search(r'"([^"]+)"', value)  # rail token, e.g. "C" / "A+3"
+                meta["rail"] = rail_match.group(1) if rail_match else None
 
     header = next((c for c in col0 if _RACE_HEADER_RE.search(c)), "")
     if (m := _RACE_HEADER_RE.search(header)) is not None:
