@@ -8,9 +8,21 @@ from typing import Any
 
 import duckdb
 
-from hkjc.data.models import Dividend, MeetingResults, RaceResult, RunnerResult
+from hkjc.data.models import (
+    Dividend,
+    HorseFormRun,
+    HorseProfile,
+    MeetingResults,
+    RaceResult,
+    RunnerResult,
+)
 from hkjc.data.store.manifest import Manifest
-from hkjc.data.store.writer import refresh_views, season_label, write_meeting
+from hkjc.data.store.writer import (
+    refresh_views,
+    season_label,
+    write_horse_profile,
+    write_meeting,
+)
 
 
 def _scalar(con: Any, sql: str) -> Any:
@@ -91,6 +103,58 @@ def test_write_meeting_partitions_and_views(tmp_path: Path) -> None:
         assert _scalar(con, "SELECT count(*) FROM races") == 1
         assert _scalar(con, "SELECT dividend FROM dividends WHERE pool = 'WIN'") == 27.0
         assert _scalar(con, "SELECT win_odds FROM results WHERE horse_id = 'HK_2022_H447'") == 2.7
+    finally:
+        con.close()
+
+
+def test_write_horse_profile_and_views(tmp_path: Path) -> None:
+    raw = tmp_path / "raw"
+    profile = HorseProfile(
+        horse_id="HK_2022_H447",
+        name="FAMILY FORTUNE",
+        brand="H447",
+        country_of_origin="NZ",
+        age=5,
+        colour="Bay",
+        sex="Gelding",
+        sire="Derryn",
+        dam="Waiana Gold",
+        dams_sire="Gold Centre",
+        current_rating=43,
+        season_start_rating=27,
+        form=[
+            HorseFormRun(
+                race_index=745,
+                finish_pos=1,
+                finish_pos_raw="1",
+                run_date=date(2026, 6, 3),
+                venue="HV",
+                track="Turf",
+                course="C",
+                distance_m=1650,
+                going="GF",
+                race_class="5",
+                draw=1,
+                rating=37,
+                jockey_code="MOJ",
+                trainer_code="FC",
+                lbw_raw="N",
+                win_odds=2.7,
+                actual_weight=133,
+                running_position_raw="7 7 6 1",
+                finish_time_s=98.85,
+                declared_weight=995,
+                gear="TT",
+            )
+        ],
+    )
+    assert write_horse_profile(raw, profile) == 1
+
+    con = duckdb.connect()
+    try:
+        refresh_views(con, raw)
+        assert _scalar(con, "SELECT current_rating FROM horses") == 43
+        assert _scalar(con, "SELECT rating FROM horse_form WHERE race_index = 745") == 37
     finally:
         con.close()
 

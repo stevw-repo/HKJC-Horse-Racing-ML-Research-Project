@@ -14,9 +14,12 @@ from typing import Any
 
 import polars as pl
 
-from hkjc.data.models import MeetingResults
+from hkjc.data.models import HorseProfile, MeetingResults
 
+# Meeting-partitioned tables (written by write_meeting).
 TABLES = ("races", "results", "dividends")
+# All tables exposed as DuckDB views (meeting tables + per-horse profile tables).
+VIEW_TABLES = ("races", "results", "dividends", "horses", "horse_form")
 
 _RACES_SCHEMA: dict[str, pl.DataType] = {
     "race_date": pl.Date(),
@@ -60,6 +63,49 @@ _DIVIDENDS_SCHEMA: dict[str, pl.DataType] = {
     "pool": pl.String(),
     "combination": pl.String(),
     "dividend": pl.Float64(),
+}
+_HORSES_SCHEMA: dict[str, pl.DataType] = {
+    "horse_id": pl.String(),
+    "name": pl.String(),
+    "brand": pl.String(),
+    "country_of_origin": pl.String(),
+    "age": pl.Int64(),
+    "colour": pl.String(),
+    "sex": pl.String(),
+    "import_type": pl.String(),
+    "sire": pl.String(),
+    "dam": pl.String(),
+    "dams_sire": pl.String(),
+    "owner": pl.String(),
+    "trainer": pl.String(),
+    "current_rating": pl.Int64(),
+    "season_start_rating": pl.Int64(),
+    "season_stakes": pl.Int64(),
+    "total_stakes": pl.Int64(),
+}
+_HORSE_FORM_SCHEMA: dict[str, pl.DataType] = {
+    "horse_id": pl.String(),
+    "race_index": pl.Int64(),
+    "finish_pos": pl.Int64(),
+    "finish_pos_raw": pl.String(),
+    "run_date": pl.Date(),
+    "venue": pl.String(),
+    "track": pl.String(),
+    "course": pl.String(),
+    "distance_m": pl.Int64(),
+    "going": pl.String(),
+    "race_class": pl.String(),
+    "draw": pl.Int64(),
+    "rating": pl.Int64(),
+    "jockey_code": pl.String(),
+    "trainer_code": pl.String(),
+    "lbw_raw": pl.String(),
+    "win_odds": pl.Float64(),
+    "actual_weight": pl.Int64(),
+    "running_position_raw": pl.String(),
+    "finish_time_s": pl.Float64(),
+    "declared_weight": pl.Int64(),
+    "gear": pl.String(),
 }
 _SCHEMAS = {"races": _RACES_SCHEMA, "results": _RESULTS_SCHEMA, "dividends": _DIVIDENDS_SCHEMA}
 
@@ -120,9 +166,29 @@ def write_meeting(raw_dir: Path, meeting: MeetingResults) -> dict[str, int]:
     return counts
 
 
+def write_horse_profile(raw_dir: Path, profile: HorseProfile) -> int:
+    """Write one horse's bio row + form rows to per-horse Parquet; return form-row count.
+
+    Profiles are mutable (rating/form change), so each file is overwritten on refresh.
+    """
+    bio_row = profile.model_dump(exclude={"form"})
+    form_rows = [{"horse_id": profile.horse_id, **run.model_dump()} for run in profile.form]
+    horses_dir = raw_dir / "horses"
+    form_dir = raw_dir / "horse_form"
+    horses_dir.mkdir(parents=True, exist_ok=True)
+    form_dir.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame([bio_row], schema=_HORSES_SCHEMA).write_parquet(
+        horses_dir / f"{profile.horse_id}.parquet"
+    )
+    pl.DataFrame(form_rows, schema=_HORSE_FORM_SCHEMA).write_parquet(
+        form_dir / f"{profile.horse_id}.parquet"
+    )
+    return len(form_rows)
+
+
 def refresh_views(con: Any, raw_dir: Path) -> None:
     """(Re)create DuckDB views over the raw Parquet for each table that has data."""
-    for table in TABLES:
+    for table in VIEW_TABLES:
         if not any((raw_dir / table).rglob("*.parquet")):
             continue
         glob = f"{(raw_dir / table).as_posix()}/**/*.parquet"

@@ -16,6 +16,7 @@ import duckdb
 from hkjc.common.config import AppConfig, get_config
 from hkjc.common.time import now_hkt
 from hkjc.data.models import MeetingResults
+from hkjc.data.parse.profiles import parse_horse_profile
 from hkjc.data.parse.results import (
     count_races,
     parse_meeting_dates,
@@ -24,7 +25,7 @@ from hkjc.data.parse.results import (
 )
 from hkjc.data.scrape.client import Fetcher
 from hkjc.data.store.manifest import Manifest
-from hkjc.data.store.writer import refresh_views, season_label, write_meeting
+from hkjc.data.store.writer import refresh_views, season_label, write_horse_profile, write_meeting
 
 DEFAULT_RATE_PER_SEC = 5.0
 DEFAULT_CONCURRENCY = 4
@@ -144,6 +145,64 @@ def backfill(
     return reports
 
 
+def horse_url(base: str, horse_id: str) -> str:
+    return f"{base}/horse?horseid={horse_id}"
+
+
+def stored_horse_ids(cfg: AppConfig | None = None) -> list[str]:
+    """Distinct horse ids seen in stored results (the set worth profiling)."""
+    cfg = cfg or get_config()
+    if not cfg.paths.duckdb_path.is_file():
+        return []
+    con = duckdb.connect(str(cfg.paths.duckdb_path))
+    try:
+        rows = con.execute(
+            "SELECT DISTINCT horse_id FROM results WHERE horse_id IS NOT NULL ORDER BY horse_id"
+        ).fetchall()
+        return [str(r[0]) for r in rows]
+    except duckdb.Error:
+        return []
+    finally:
+        con.close()
+
+
+def scrape_horses(
+    *,
+    cfg: AppConfig | None = None,
+    horse_ids: list[str] | None = None,
+    limit: int | None = None,
+    on_horse: Callable[[str, int], None] | None = None,
+) -> dict[str, int]:
+    """Scrape horse profiles (bio + form) for ``horse_ids`` (default: all seen in results).
+
+    Profiles are mutable, so this always refetches (the on-disk cache keeps it polite
+    within a session); each per-horse file is overwritten.
+    """
+    cfg = cfg or get_config()
+    base = cfg.sources.hkjc_base_url
+    ids = horse_ids if horse_ids is not None else stored_horse_ids(cfg)
+    if limit is not None:
+        ids = ids[:limit]
+    if not ids:
+        return {"horses": 0, "form_rows": 0}
+
+    fetcher = Fetcher(
+        cfg.paths.cache_dir, rate_per_sec=DEFAULT_RATE_PER_SEC, concurrency=DEFAULT_CONCURRENCY
+    )
+    results = fetcher.fetch_many([horse_url(base, hid) for hid in ids])
+    total_form = 0
+    with Manifest(cfg.paths.duckdb_path) as manifest:
+        for hid, result in zip(ids, results, strict=True):
+            profile = parse_horse_profile(result.text, hid)
+            n_form = write_horse_profile(cfg.paths.raw_dir, profile)
+            total_form += n_form
+            manifest.record(result.url, "horse", result.content_hash, result.status, n_form)
+            if on_horse is not None:
+                on_horse(hid, n_form)
+        refresh_views(manifest.con, cfg.paths.raw_dir)
+    return {"horses": len(ids), "form_rows": total_form}
+
+
 def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
     """Summarize stored coverage from the DuckDB views (for the data-health report)."""
     cfg = cfg or get_config()
@@ -151,6 +210,8 @@ def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
         "races_rows": 0,
         "results_rows": 0,
         "dividends_rows": 0,
+        "horses_rows": 0,
+        "horse_form_rows": 0,
         "meetings": 0,
         "manifest_urls": 0,
         "date_min": None,
@@ -161,7 +222,7 @@ def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
         return summary
     con = duckdb.connect(str(cfg.paths.duckdb_path))
     try:
-        for table in ("races", "results", "dividends"):
+        for table in ("races", "results", "dividends", "horses", "horse_form"):
             try:
                 row = con.execute(f"SELECT count(*) FROM {table}").fetchone()
                 summary[f"{table}_rows"] = int(row[0]) if row else 0

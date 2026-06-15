@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RunnerResult(BaseModel):
@@ -74,3 +74,56 @@ class MeetingResults(BaseModel):
     race_date: date
     venue: str
     races: list[RaceResult]
+
+
+class HorseFormRun(BaseModel):
+    """One past run from a horse's form-records table (historical pre-race signal)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    race_index: int | None  # joins to RaceResult.race_index
+    finish_pos: int | None
+    finish_pos_raw: str
+    run_date: date | None
+    venue: str | None  # ST / HV (other = overseas, kept verbatim)
+    track: str | None  # Turf / AWT
+    course: str | None  # e.g. "C"
+    distance_m: int | None
+    going: str | None  # going code (GF, G, ...)
+    race_class: str | None
+    draw: int | None
+    rating: int | None  # official rating at the time of that run
+    jockey_code: str | None
+    trainer_code: str | None
+    lbw_raw: str | None
+    win_odds: float | None
+    actual_weight: int | None
+    running_position_raw: str | None
+    finish_time_s: float | None
+    declared_weight: int | None
+    gear: str | None
+
+
+class HorseProfile(BaseModel):
+    """Horse profile: locked bio block (PLAN.md §0) + form records."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    horse_id: str
+    name: str | None = None
+    brand: str | None = None  # e.g. H447
+    country_of_origin: str | None = None
+    age: int | None = None  # current age (age-at-race is derived from run dates)
+    colour: str | None = None
+    sex: str | None = None
+    import_type: str | None = None
+    sire: str | None = None
+    dam: str | None = None
+    dams_sire: str | None = None
+    owner: str | None = None
+    trainer: str | None = None
+    current_rating: int | None = None
+    season_start_rating: int | None = None
+    season_stakes: int | None = None
+    total_stakes: int | None = None
+    form: list[HorseFormRun] = Field(default_factory=list)

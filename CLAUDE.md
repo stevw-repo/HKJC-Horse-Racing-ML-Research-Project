@@ -103,18 +103,27 @@ page is abridged, used only for venue + race-count enumeration) → `store/write
 (partitioned raw Parquet + DuckDB views) + `store/manifest.py` (`_scrape_manifest` for
 idempotency). Parsed shapes live in `data/models.py`.
 
+**Horse profiles** are also built (`parse/profiles.py` → `store.write_horse_profile`):
+the locked bio block (PLAN.md §0) + the form-records table (per-run rating/gear/going/draw,
+with a `RaceIndex` that joins to `races`). Form records are how we reconstruct historical
+pre-race fundamentals, because **race cards are forward-only** — HKJC removes a meeting's
+card once results publish, so cards cannot be backfilled (capture upcoming cards going
+forward, for race-day/M7).
+
 CLI: `hkjc scrape --date YYYY-MM-DD [--force]`, `hkjc backfill [--limit N] [--since ...]`,
-`hkjc data-health`. Meeting URLs (`resultsall?racedate=`) discover venue + race count
-without a `Racecourse` param; per-race URLs are `localresults?...&RaceNo=N`. Re-running a
-**frozen** (past) meeting recorded in the manifest fetches 0 rows.
+`hkjc scrape-horses [--limit N]` (profiles all horses seen in results), `hkjc data-health`.
+Meeting URLs (`resultsall?racedate=`) discover venue + race count without a `Racecourse`
+param; per-race URLs are `localresults?...&RaceNo=N`. Re-running a **frozen** (past) meeting
+recorded in the manifest fetches 0 rows; horse profiles are **mutable** and refetched.
 
 **Open item before the full backfill:** the results `selectId` dropdown only lists ~2
 seasons (newest 2026, oldest 2024-07-27). Deep historical backfill needs a date-candidate
 generator (Wed + weekend race days, probe + record empties) or a season param.
 
-**Remaining M1:** race cards, horse/jockey/trainer profiles, enabled pre-race alt sources
-(#3 going/rail, #4 trials, #5 trackwork, #6 vet-list, #8 gear, #11 pedigree, #14 holidays),
-HKO weather CSV, then the full backfill + a richer coverage/gap report.
+**Remaining M1:** jockey/trainer profiles, enabled pre-race alt sources (#3 going/rail,
+#4 trials, #5 trackwork, #6 vet-list, #8 gear, #14 holidays; #11 pedigree is captured via
+horse bio), HKO weather CSV, forward race-card capture, then the full backfill + a richer
+coverage/gap report.
 
 ## Milestone status
 

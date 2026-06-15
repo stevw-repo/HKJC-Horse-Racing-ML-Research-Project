@@ -135,6 +135,17 @@ def backfill(
     )
 
 
+@app.command(name="scrape-horses")
+def scrape_horses(
+    limit: Annotated[int | None, typer.Option(help="Only the first N horses.")] = None,
+) -> None:
+    """Scrape horse profiles (bio + form) for horses seen in stored results (M1)."""
+    from hkjc.data import pipeline
+
+    summary = pipeline.scrape_horses(limit=limit)
+    typer.echo(f"Horses: {summary['horses']} profiles, {summary['form_rows']} form rows.")
+
+
 @app.command(name="data-health")
 def data_health() -> None:
     """Show stored data coverage and the manifest size (M1)."""
@@ -146,6 +157,8 @@ def data_health() -> None:
     typer.echo(f"  races        : {s['races_rows']}")
     typer.echo(f"  runners      : {s['results_rows']}")
     typer.echo(f"  dividends    : {s['dividends_rows']}")
+    typer.echo(f"  horses       : {s['horses_rows']}")
+    typer.echo(f"  horse form   : {s['horse_form_rows']}")
     typer.echo(f"  manifest urls: {s['manifest_urls']}")
     for season, n in sorted(s["seasons"].items()):
         typer.echo(f"    season {season}: {n} meetings")
