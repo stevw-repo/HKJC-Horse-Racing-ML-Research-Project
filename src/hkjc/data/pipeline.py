@@ -265,8 +265,9 @@ def scrape_horses(
     results = fetcher.fetch_many([horse_url(base, hid) for hid in ids])
     total_form = 0
     with Manifest(cfg.paths.duckdb_path) as manifest:
+        as_of = now_hkt().date()
         for hid, result in zip(ids, results, strict=True):
-            profile = parse_horse_profile(result.text, hid)
+            profile = parse_horse_profile(result.text, hid, as_of=as_of)
             n_form = write_horse_profile(cfg.paths.raw_dir, profile)
             total_form += n_form
             manifest.record(result.url, "horse", result.content_hash, result.status, n_form)

@@ -116,7 +116,10 @@ class HorseProfile(BaseModel):
     name: str | None = None
     brand: str | None = None  # e.g. H447
     country_of_origin: str | None = None
-    age: int | None = None  # current age (age-at-race is derived from run dates)
+    age: int | None = None  # current age as scraped (None once retired); see birth_year
+    birth_year: int | None = (
+        None  # = scrape_year - age (calendar convention); anchor for age-at-race
+    )
     colour: str | None = None
     sex: str | None = None
     import_type: str | None = None
@@ -125,7 +128,8 @@ class HorseProfile(BaseModel):
     dams_sire: str | None = None
     owner: str | None = None
     trainer: str | None = None
-    current_rating: int | None = None
+    current_rating: int | None = None  # active horses
+    last_rating: int | None = None  # retired horses show "Last Rating" instead
     season_start_rating: int | None = None
     season_stakes: int | None = None
     total_stakes: int | None = None

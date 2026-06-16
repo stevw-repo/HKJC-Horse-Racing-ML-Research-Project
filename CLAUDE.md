@@ -110,6 +110,15 @@ pre-race fundamentals, because **race cards are forward-only** — HKJC removes 
 card once results publish, so cards cannot be backfilled (capture upcoming cards going
 forward, for race-day/M7).
 
+**Retired-horse bio:** a retired horse's profile drops the combined `Country of Origin / Age`
+row for a standalone `Country of Origin` (no current age) and shows `Last Rating` instead of
+`Current Rating` — the parser handles both, so `country_of_origin`/`last_rating` are
+recovered for old horses (only `age` is genuinely absent). HKJC publishes **no foaling date**,
+so **age-at-race is derived in M2** as `race_year - birth_year`, where `birth_year =
+scrape_year - age` (calendar convention, stored at scrape time). `birth_year`/`age` are null
+for horses retired before they were ever scraped — age-at-race is then unavailable for that
+deep-history era (acceptable; it isn't the live-betting era).
+
 **Jockey/trainer profiles** are built too (`parse_person_profile` → `people` view): one
 parser for both roles capturing current-season strike-rate inputs (wins/2-3-4ths, rides or
 runners, win %, stakes).

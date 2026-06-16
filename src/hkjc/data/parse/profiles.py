@@ -235,18 +235,32 @@ def parse_person_profile(html: str, code: str, role: str) -> PersonProfile:
     )
 
 
-def parse_horse_profile(html: str, horse_id: str) -> HorseProfile:
-    """Parse a horse profile page into a :class:`HorseProfile`."""
+def parse_horse_profile(html: str, horse_id: str, *, as_of: date | None = None) -> HorseProfile:
+    """Parse a horse profile page into a :class:`HorseProfile`.
+
+    Active horses show a combined ``Country of Origin / Age`` row; retired horses show a
+    standalone ``Country of Origin`` (age is dropped) — both are handled. ``birth_year`` is
+    derived as ``as_of.year - age`` (calendar-year convention) when an age is present,
+    giving M2 a stable anchor for age-at-race; it stays ``None`` for horses retired before
+    they were ever scraped.
+    """
     tree = HTMLParser(html)
     bio = _bio_pairs(tree)
-    country, age = _slash(bio.get("countryoforiginage"))
+    combined = bio.get("countryoforiginage")
+    if combined:  # active: "NZ / 5"
+        country, age_str = _slash(combined)
+    else:  # retired: standalone "Country of Origin", no current age
+        country, age_str = (bio.get("countryoforigin") or None), None
     colour, sex = _slash(bio.get("coloursex"))
+    age = to_int(age_str)
+    birth_year = (as_of.year - age) if (as_of is not None and age is not None) else None
     return HorseProfile(
         horse_id=horse_id,
         name=_horse_name(tree),
         brand=horse_id.rsplit("_", 1)[-1],
         country_of_origin=country,
-        age=to_int(age),
+        age=age,
+        birth_year=birth_year,
         colour=colour,
         sex=sex,
         import_type=bio.get("importtype") or None,
@@ -256,6 +270,7 @@ def parse_horse_profile(html: str, horse_id: str) -> HorseProfile:
         owner=bio.get("owner") or None,
         trainer=bio.get("trainer") or None,
         current_rating=to_int(bio.get("currentrating")),
+        last_rating=to_int(bio.get("lastrating")),
         season_start_rating=to_int(bio.get("startofseasonrating")),
         season_stakes=to_int(bio.get("seasonstakes")),
         total_stakes=to_int(bio.get("totalstakes")),
