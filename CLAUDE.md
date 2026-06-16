@@ -184,6 +184,16 @@ Start here when resuming. Build against the DuckDB views the scraper populates
 `barrier_trials`, `trackwork`, `public_holidays`). M2 scope (PLAN.md §2):
 - **As-of feature store** in `features/` — every feature computable from `event_time ≤
   race_off_time`; honor the **market wall** (SP is market data) and **lagged-text** rules.
+- **Age / maturity (decided 2026-06-15):** do **not** rely on the scraped `age` field — it's
+  *current* age and goes null when a horse retires (only ~84% of even this season's runners
+  have it; ~0% pre-2021). Instead derive **career-stage** features from the run history, which
+  is ~universal (95%+ of runner-rows have a prior run; debutants = stage 0): `days_since_debut`,
+  `career_run_number`, `seasons_active`, `days_since_last_run`. For **age-at-race**, build a
+  layered `birth_year`: exact (`scrape_year - age`) where the horse was active at scrape →
+  else debut-heuristic (`first_HK_race_season - debut_age`; `debut_age ≈ 3` for griffin import
+  types `PPG`/`ISG`, fuzzier ±1 for `PP` overseas-raced imports) → else null + an `age_imputed`
+  flag. GBMs handle the residual nulls natively. Missingness correlates with era, so **ablate**
+  age and lean on the leakage canary + walk-forward so "age missing" can't proxy era.
 - **Leakage canary** (shuffle/future sentinel) that must score ≈0 — the highest-ROI test.
 - **PL-strength conditional-logit baseline** (`models/base.py` = `ProbabilityModel` →
   per-runner strength vector; `models/logit/`); Harville PLACE.
