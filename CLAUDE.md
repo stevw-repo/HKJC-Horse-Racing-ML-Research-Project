@@ -67,9 +67,11 @@ fixtures/          checked-in sample HTML/JSON for offline parser tests (M1+)
 data/              gitignored data lake: raw/ processed/ cache/ live_odds/ mlruns/
 ```
 
-Note: leaf model subpackages (`models/logit`, `models/gbm`, …) and `models/base.py`
-(the `ProbabilityModel` interface emitting a per-runner **Plackett–Luce strength
-vector**) are created when M2/M3 land — they don't exist yet.
+Note: `models/base.py` (the `ProbabilityModel` interface emitting a per-runner
+**Plackett–Luce strength vector**), `models/logit/`, and `models/place/` exist as of M2.
+The remaining leaf subpackages (`models/gbm`, `models/nn`, `models/ensemble`,
+`models/calibrate`, `models/blend`) land in M3. `features/` and `backtest/` are populated
+(M2); `features/nlp/` is M4.
 
 ## Configuration
 
@@ -170,37 +172,74 @@ trackwork #5, sectional archive #7, racing news #9 (M4 NLP), pedigree #11, holid
 
 ## Milestone status
 
-M0 (foundations) and **M1 (scraper + storage) are implementation-complete**: every locked
-source has a parser + DuckDB view + offline fixture test, idempotency is proven, historical
-enumeration reaches ~2006, and `hkjc data-health` reports coverage. The one operational
-step left is **running the full backfill** (`hkjc backfill` — a multi-hour crawl the user
-kicks off; nothing else depends on it being run first). Forward race-card capture is parked
-with M7. Each milestone's exit criterion is in PLAN.md §2 — treat it as the definition of done.
+M0, **M1 (scraper + storage), and M2 (features + baseline + honest backtest) are
+implementation-complete.** M1: every locked source has a parser + DuckDB view + offline
+fixture test, idempotency is proven, enumeration reaches ~2006, and the full backfill is
+**stored** (1,697 meetings, 2006-09 -> 2026-06; `hkjc data-health` reports coverage). M2: the
+as-of feature store + leakage canary, the PL-strength conditional-logit baseline + Harville
+PLACE, and an honest walk-forward backtest — all green under ruff/mypy/pytest. Each
+milestone's exit criterion is in PLAN.md §2 — treat it as the definition of done. Forward
+race-card capture is parked with M7.
 
-## Next: M2 (features + baseline + honest backtest)
+## M2 (features + baseline + honest backtest) — implementation-complete
 
-Start here when resuming. Build against the DuckDB views the scraper populates
-(`races`, `results`, `dividends`, `horses`, `horse_form`, `people`, `weather`,
-`barrier_trials`, `trackwork`, `public_holidays`). M2 scope (PLAN.md §2):
-- **As-of feature store** in `features/` — every feature computable from `event_time ≤
-  race_off_time`; honor the **market wall** (SP is market data) and **lagged-text** rules.
-- **Age / maturity (decided 2026-06-15):** do **not** rely on the scraped `age` field — it's
-  *current* age and goes null when a horse retires (only ~84% of even this season's runners
-  have it; ~0% pre-2021). Instead derive **career-stage** features from the run history, which
-  is ~universal (95%+ of runner-rows have a prior run; debutants = stage 0): `days_since_debut`,
-  `career_run_number`, `seasons_active`, `days_since_last_run`. For **age-at-race**, build a
-  layered `birth_year`: exact (`scrape_year - age`) where the horse was active at scrape →
-  else debut-heuristic (`first_HK_race_season - debut_age`; `debut_age ≈ 3` for griffin import
-  types `PPG`/`ISG`, fuzzier ±1 for `PP` overseas-raced imports) → else null + an `age_imputed`
-  flag. GBMs handle the residual nulls natively. Missingness correlates with era, so **ablate**
-  age and lean on the leakage canary + walk-forward so "age missing" can't proxy era.
-- **Leakage canary** (shuffle/future sentinel) that must score ≈0 — the highest-ROI test.
-- **PL-strength conditional-logit baseline** (`models/base.py` = `ProbabilityModel` →
-  per-runner strength vector; `models/logit/`); Harville PLACE.
-- **Walk-forward backtest** in `backtest/` with takeout (~17.5%), HK$10 rounding,
-  pool-impact, place-count-by-field-size + dead-heat logic; bootstrap CIs; **two ROIs**
-  (model-only + market-blended). Property-test the dividend/Kelly/place math (hypothesis).
-- Leaf model subpackages and `models/base.py` do **not** exist yet — create them in M2.
-  Add ML deps (numpy/scipy/scikit-learn/polars-as-needed) via `uv add` at this milestone.
-- Exit criterion: end-to-end walk-forward backtest of the baseline with honest ROI/Sharpe
-  + calibration plots + CIs, and the leakage canary scoring ≈0.
+Pipeline: `features/build.py` -> `features_runner` (processed Parquet + DuckDB view) ->
+`backtest/engine.py` (walk-forward). CLI: `hkjc features build`, `hkjc backtest [--l2 ...]
+[--market-weight ...] [--ev ...] [--no-plot]`.
+
+- **As-of feature store** (`features/build.py`; column contracts/roles in `features/base.py`):
+  one row per runner per race (196,947 rows x 56 cols, 2006-2026), every feature from
+  `event_time <= race_off_time`. Reads raw Parquet via **polars column-projection** (~4s; the
+  DuckDB `union_by_name` glob over ~9.8k per-horse files took 7 min). Use
+  `missing_columns="insert"` for results' schema drift (older files predate
+  `jockey_name`/`trainer_name`). Feature groups: career-stage
+  (`career_run_number`/`days_since_debut`/`days_since_last_run`/`seasons_active`), prior form
+  (win/place rate, last-3 finish & lbw, dist/going match-rate), as-of official rating + trend
+  (from `horse_form`, joined on `race_index`), rolling jockey/trainer strike rates,
+  bio/pedigree, weather, public holiday, trial recency, and a finish-time **speed proxy**.
+- **Leakage discipline:** strictly-prior cumulative aggregates (`cum_* - current`), per-horse
+  rolling on a date-sorted frame, connection rates joined back by a stable `_row` id. The
+  **market wall** keeps SP (`win_odds`, `market_prob`) tagged `role="market"` and out of
+  `BASELINE_FEATURES`. A deterministic noise **canary** rides through fit + backtest.
+- **Connections key (important):** old result pages carry the jockey/trainer **name** (no
+  link), recent pages the **code** (no name) — complementary (~100% via coalesce). A
+  name->code map (from rows that have both) **canonicalizes identity** so a long career isn't
+  split at the era boundary. Rates are computed **as-of from prior `results`**, never from the
+  `people` snapshot (current-season = leakage).
+- **Age (as decided 2026-06-15, now implemented):** career-stage features are the backbone
+  (~95%+ coverage); `age_at_race` is `race_year - birth_year` where known (~9%) else null +
+  an `age_imputed` flag. The debut-age heuristic is **not yet** built (a clean M3 add).
+- **Baseline** (`models/base.py` = `ProbabilityModel` -> PL strength vector; `models/logit/`):
+  Benter-style within-race conditional logit, convex MLE via `scipy` L-BFGS (analytic
+  gradient), median-impute + standardize, small L2. WIN = within-race softmax;
+  **PLACE = Harville** (`models/place/`, top-k closed forms; verified exact vs brute-force
+  enumeration; identity `sum_i P(top-k)=k`).
+- **Backtest** (`backtest/`): `pari_mutuel.py` dividend math (property-tested: place-count by
+  field size, dead-heat split, HK$10 rounding, pool-impact dilution), `walk_forward.py`
+  per-season expanding splits, `metrics.py` (log-loss/Brier/top-1/calibration bins),
+  `bootstrap.py` ROI CIs (resampling races), matplotlib calibration PNG. **Payouts use the
+  stored final dividends** (the honest pool truth, dead-heat already encoded).
+- **Two ROIs (PLAN §1A):** *model-only* = back the model's top WIN/PLACE pick (no odds in the
+  decision; conservative). *market-blended* = bet positive-EV runners at the SP line using a
+  model+market blend (uses the line; optimistic upper bound). Two lenses, not strict
+  lower/upper bounds of one strategy (the conservative rule can't use a price at all, so it is
+  necessarily a different selection).
+- **Honest result (15,083 OOS races, seasons 2007-08..2025-26, feature_version v0):**
+  model-only WIN ROI **-17.5%** [-20.4, -14.3] — ~the takeout, i.e. **no edge beyond the
+  market** (the expected baseline outcome, PLAN §1F); top-1 hit 24% vs 8% base = real ranking
+  signal. **Leakage canary clean**: fitted weight 0.011 of mean |coef|; random-pick sentinel
+  ROI -19% (no edge). Calibration PNG at `data/processed/backtest/calibration_win.png`.
+- **Known gap — sectionals (#7):** declared enabled in config but **never built in M1** (0
+  rows). Speed figures use overall finish time as a proxy; true per-200m sectional capture is
+  **backlogged** (a focused data-layer add, like the other M1 sources).
+
+## Next: M3 (model zoo + calibration + blend)
+
+Build against `features_runner` + the `ProbabilityModel` interface. M3 scope (PLAN.md §2):
+LightGBM/XGBoost(GPU)/CatBoost (CatBoost handles the high-cardinality sire/dam/jockey/trainer
+categoricals the logit can't) + LambdaMART, tabular NNs, ensembles — all behind
+`ProbabilityModel`; isotonic/Platt/temperature calibration (within-race softmax stays
+primary); the tunable market-blend stage; MLflow(local) + Optuna; a leaderboard on
+walk-forward ROI/Sharpe/log-loss/calibration. Reuse `backtest/` as-is. Good first M3 adds:
+the debut-age heuristic, and capturing sectionals (#7) for real speed figures. Add the GBM/NN
+deps via `uv add` at M3.

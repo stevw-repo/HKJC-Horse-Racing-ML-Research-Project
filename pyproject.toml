@@ -26,6 +26,10 @@ dependencies = [
     "selectolax>=0.4.10",
     "tenacity>=9.1.4",
     "aiolimiter>=1.2.1",
+    "numpy>=2.4.6",
+    "scipy>=1.17.1",
+    "scikit-learn>=1.9.0",
+    "matplotlib>=3.11.0",
 ]
 
 [project.scripts]
@@ -85,7 +89,13 @@ show_error_codes = true
 
 [[tool.mypy.overrides]]
 # Untyped third-party libs (no PEP 561 stubs). Extend as new ones are imported.
-module = ["selectolax.*", "duckdb.*", "aiolimiter.*"]
+module = [
+    "selectolax.*",
+    "duckdb.*",
+    "aiolimiter.*",
+    "scipy.*",
+    "matplotlib.*",
+]
 ignore_missing_imports = true
 
 # --------------------------------------------------------------------------- #

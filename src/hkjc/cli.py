@@ -237,10 +237,60 @@ def data_health() -> None:
         typer.echo(f"    season {season}: {n} meetings")
 
 
+features_app = typer.Typer(
+    name="features", help="As-of feature store (M2).", no_args_is_help=True, add_completion=False
+)
+app.add_typer(features_app)
+
+
+@features_app.command("build")
+def features_build() -> None:
+    """Build the as-of feature store (features_runner) from the DuckDB views (M2)."""
+    from hkjc.features.build import build_features
+
+    df = build_features(persist=True)
+    typer.echo(
+        f"Features: {df.height} runner-rows x {df.width} cols -> features_runner "
+        f"(version {df['feature_version'][0]})."
+    )
+
+
 @app.command()
-def backtest() -> None:
-    """Run an honest, time-ordered walk-forward backtest (M2)."""
-    _todo("backtest", "M2 (features + baseline + backtest)")
+def backtest(
+    l2: Annotated[float, typer.Option(help="Ridge penalty for the conditional logit.")] = 1.0,
+    market_weight: Annotated[
+        float | None, typer.Option(help="Blend weight on the market (default from config).")
+    ] = None,
+    ev: Annotated[
+        float | None, typer.Option(help="EV edge threshold for the blend (default from config).")
+    ] = None,
+    seed: Annotated[int, typer.Option(help="Bootstrap RNG seed.")] = 0,
+    no_plot: Annotated[bool, typer.Option("--no-plot", help="Skip the calibration PNG.")] = False,
+) -> None:
+    """Run an honest, time-ordered walk-forward backtest of the baseline (M2)."""
+    from hkjc.backtest.engine import run_backtest
+
+    res = run_backtest(
+        l2=l2, market_weight=market_weight, ev_threshold=ev, seed=seed, make_plot=not no_plot
+    )
+    typer.echo(
+        f"Walk-forward OOS: {res.n_oos_races} races, {res.n_oos_runners} runners "
+        f"(seasons {res.test_span[0]}..{res.test_span[1]}), features {res.feature_version}\n"
+    )
+    typer.echo("Model (WIN):")
+    typer.echo(f"  log-loss   : {res.win_log_loss:.4f}")
+    typer.echo(f"  Brier      : {res.brier:.4f}")
+    typer.echo(f"  top-1 hit  : {res.top1_hit_rate:.3f}\n")
+    typer.echo("Honest ROI (flat stakes, paid at final dividends):")
+    typer.echo(f"  {'policy':<22}{'bets':>8}{'ROI':>9}{'95% CI':>20}{'Sharpe':>9}")
+    for pol in res.policies.values():
+        ci = f"[{pol.roi_lo:+.1%}, {pol.roi_hi:+.1%}]"
+        typer.echo(f"  {pol.name:<22}{pol.n_bets:>8}{pol.roi:>+8.1%}{ci:>20}{pol.sharpe:>9.3f}")
+    typer.echo("\nLeakage canary (must be ~0):")
+    typer.echo(f"  coef ratio vs mean |coef| : {res.canary_coef_ratio:.4f}")
+    typer.echo(f"  random-pick sentinel ROI  : {res.canary_roi:+.1%}")
+    if res.calibration_png:
+        typer.echo(f"\nCalibration plot: {res.calibration_png}")
 
 
 @app.command()
