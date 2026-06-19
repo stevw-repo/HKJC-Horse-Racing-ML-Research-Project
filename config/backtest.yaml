@@ -1,0 +1,22 @@
+# Backtest engine defaults (PLAN.md §1, §2 M2). Honest, time-ordered, walk-forward.
+backtest:
+  takeout_win: 0.175           # ~17.5% Win/Place takeout
+  takeout_place: 0.175
+  rounding_unit: 10            # HK$10 stake rounding
+  pool_impact: true            # model pari-mutuel pool dilution (≈0 at HK$1,000)
+  walk_forward: true           # strict time-ordered, no shuffling/lookahead
+  retrain_cadence: per_season  # default; revisit in M2
+  bootstrap_iterations: 1000   # bootstrap CIs to separate skill from luck
+
+  # Report BOTH a conservative model-only ROI and an upper-bound market-blended ROI
+  # (final-dividend honesty caveat, PLAN.md §1A).
+  report_two_rois: true
+
+  # Place-dividend rules (PLAN.md §1I) — property-tested in M2.
+  place_rules:
+    places_by_field_size:
+      - { min_runners: 7, places: 3 }   # 7+ runners -> 3 places
+      - { min_runners: 5, places: 2 }   # 5-6 runners -> 2 places
+      - { min_runners: 1, places: 0 }   # <5 runners -> no place (WALKOVER handled separately)
+    dead_heat_split: true
+    win_dividend_unit: 10               # WIN dividend quoted per HK$10

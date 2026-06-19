@@ -1,0 +1,18 @@
+# Risk / staking defaults — CONFIRMED (PLAN.md §5.2). All are first-class, configurable,
+# and swept in M5. Bankroll is a parameter so larger bankrolls can be simulated.
+risk:
+  bankroll: 1000                # HK$
+  currency: HKD
+  rebate_rate: 0.0             # 0 at HK$1,000 (rebate needs >= HK$10,000 losing per betline)
+  min_bet: 10                  # HK$ minimum
+  bet_unit: 10                 # HK$ legal increment (round stakes to this)
+  ev_threshold: 0.05           # require >= 5% edge net of takeout
+
+  staking_methods: [flat, fixed_fraction, kelly_full, kelly_fractional]
+  kelly_fractions: [0.05, 0.10, 0.15, 0.25, 0.50]
+  per_race_cap: 0.10           # 10% of bankroll per race
+  per_day_cap: 0.25            # 25% of bankroll per day
+  correlated_kelly: true       # simultaneous/correlated Kelly within & across races
+
+  # Multi-bankroll sweep to quantify HK$10 granularity + HK$10k rebate-threshold effects.
+  multi_bankroll: [1000, 10000, 50000, 100000]

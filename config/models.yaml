@@ -1,0 +1,18 @@
+# Modeling config. The full model zoo + per-model hyperparameters firm up at M3;
+# this captures the canonical choices from PLAN.md §1D/§1E and §2.
+models:
+  baseline: conditional_logit          # PL-strength Benter-style baseline (M2)
+
+  # PLACE probability methods to derive + compare (PLAN.md §1D).
+  place_methods: [harville, henery, lo_bacon_shek, direct]
+
+  # Calibration layers (within-race normalization is primary; these are secondary).
+  calibration: [isotonic, platt, temperature]
+  within_race_normalization: true
+
+  # Market blend (Benter-style); weight is a tunable hyperparameter (M3).
+  market_blend_enabled: true
+  market_blend_weight: 0.5
+
+  experiment_tracking: mlflow_local    # local file/sqlite backend (no cloud)
+  hpo: optuna

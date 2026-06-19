@@ -1,0 +1,11 @@
+# Filesystem layout for the local data lake. `data_root` and `fixtures_dir` are
+# resolved relative to the repo root unless absolute. The `data/` tree is gitignored.
+paths:
+  data_root: data
+  fixtures_dir: fixtures
+  raw_subdir: raw                 # immutable partitioned Parquet (season/venue/date)
+  processed_subdir: processed     # DuckDB views/tables
+  cache_subdir: cache             # HTTP cache
+  live_odds_subdir: live_odds     # live GraphQL odds snapshots (M7)
+  mlruns_subdir: mlruns           # MLflow local backend (M3)
+  duckdb_filename: hkjc.duckdb
