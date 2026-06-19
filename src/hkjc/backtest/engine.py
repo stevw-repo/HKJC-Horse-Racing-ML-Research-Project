@@ -66,9 +66,10 @@ class BacktestResult:
     brier: float
     top1_hit_rate: float
     policies: dict[str, PolicyResult]
-    canary_coef_ratio: float
-    canary_roi: float
-    calibration_png: str | None
+    ece: float = 0.0
+    canary_coef_ratio: float | None = None
+    canary_roi: float | None = None
+    calibration_png: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -333,6 +334,7 @@ def _evaluate(
         brier=metrics.brier_win(wp, o_y),
         top1_hit_rate=metrics.top1_hit_rate(wp, o_y, ocode, ong),
         policies=policies,
+        ece=metrics.expected_calibration_error(wp, o_y),
         canary_coef_ratio=canary_ratio,
         canary_roi=canary.roi,
         calibration_png=png,

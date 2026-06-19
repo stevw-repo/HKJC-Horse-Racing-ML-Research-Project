@@ -294,9 +294,50 @@ def backtest(
 
 
 @app.command()
-def train() -> None:
-    """Train and compare the model zoo (M3)."""
-    _todo("train", "M3 (model zoo + calibration + blend)")
+def train(
+    models: Annotated[
+        str | None, typer.Option(help="Comma-separated model subset (default: full zoo).")
+    ] = None,
+    seasons: Annotated[
+        int | None, typer.Option(help="Only the most recent N test seasons (default: all).")
+    ] = None,
+    nn_epochs: Annotated[int, typer.Option(help="Max epochs for the tabular NNs.")] = 120,
+    market_weight: Annotated[float | None, typer.Option(help="Market-blend weight.")] = None,
+    ev: Annotated[float | None, typer.Option(help="EV edge threshold for the blend.")] = None,
+    seed: Annotated[int, typer.Option(help="RNG seed.")] = 0,
+) -> None:
+    """Train the model zoo and print the walk-forward leaderboard (M3)."""
+    from hkjc.experiments.leaderboard import default_models, format_leaderboard, run_leaderboard
+
+    specs = default_models(nn_epochs=nn_epochs)
+    if models:
+        specs = {k: specs[k] for k in models.split(",") if k in specs}
+    entries = run_leaderboard(
+        models=specs,
+        market_weight=market_weight,
+        ev_threshold=ev,
+        max_test_seasons=seasons,
+        nn_epochs=nn_epochs,
+        seed=seed,
+    )
+    typer.echo("Walk-forward leaderboard (ranked by model-only WIN ROI):\n")
+    typer.echo(format_leaderboard(entries))
+
+
+@app.command()
+def tune(
+    model: Annotated[str, typer.Option(help="Model to tune: catboost or xgboost.")] = "catboost",
+    trials: Annotated[int, typer.Option(help="Optuna trial budget.")] = 15,
+    seasons: Annotated[int, typer.Option(help="Recent test seasons for the objective.")] = 4,
+    seed: Annotated[int, typer.Option(help="RNG seed.")] = 0,
+) -> None:
+    """Optuna hyperparameter search (minimises walk-forward WIN log-loss) (M3)."""
+    from hkjc.experiments.tuning import tune as run_tune
+
+    res = run_tune(model, n_trials=trials, max_test_seasons=seasons, seed=seed)
+    typer.echo(f"Best {res.model}: log-loss {res.best_log_loss:.4f} over {res.n_trials} trials")
+    for key, value in res.best_params.items():
+        typer.echo(f"  {key}: {value}")
 
 
 @app.command()

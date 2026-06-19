@@ -18,8 +18,8 @@ conventions and current state of this repo.
 | **M0** | Foundations: env, config, logging, storage layout, tooling, CLI | ✅ done |
 | **M1** | Incremental scraper + storage | ✅ done — backfill stored (1,697 meetings, 2006–2026) |
 | **M2** | Features + baseline conditional-logit + honest backtest | ✅ done |
-| M3 | Model zoo + calibration + market blend | ◻ next |
-| M4 | NLP track (English) | — |
+| **M3** | Model zoo (GBMs + LambdaMART + tabular NNs) + calibration + market blend | ✅ done |
+| M4 | NLP track (English) | ◻ next |
 | M5 | Risk / staking sweeps | — |
 | M6 | UI (React + FastAPI) | — |
 | M7 | Live ops + odds logging | — |
@@ -88,6 +88,28 @@ final dividends. The baseline's honest model-only WIN ROI sits around the ~17.5%
 i.e. **no edge beyond the market**, the expected starting point (PLAN §1F); beating it is the
 job of M3+.
 
+## Model zoo + leaderboard (M3)
+
+Train the whole zoo (LightGBM, XGBoost, CatBoost, LambdaMART, MLP, FT-Transformer, ensemble)
+behind one `ProbabilityModel` interface and rank them on the same honest walk-forward.
+
+```bash
+uv run hkjc features build    # rebuild as features v1 (adds the debut-age heuristic)
+uv run hkjc train             # walk-forward leaderboard (log-loss / top-1 / ECE / two ROIs)
+uv run hkjc train --models catboost,logit --seasons 5   # quick subset over recent seasons
+uv run hkjc tune --model catboost --trials 15           # Optuna HPO (min walk-forward log-loss)
+```
+
+GBMs use the GPU when present (`HKJC_FORCE_CPU=1` forces CPU; CI is CPU-only); runs are logged
+to a local MLflow sqlite store with the feature-store data hash for reproducibility. The
+honest takeaway holds across the zoo: **every model loses ≈ the takeout — no edge beyond the
+market yet.** A clean finding is that models trained on the *grouped within-race* likelihood
+(logit, the NNs) are much better calibrated than the pointwise GBMs, which is what the
+calibration layer (temperature/isotonic/Platt) is for.
+
+> Heavy jobs: run them via the venv directly (`.venv/Scripts/hkjc.exe`) — `uv run` re-syncs
+> the env on each call and can deadlock on the editable-`hkjc.exe` lock against a running job.
+
 ## Configuration
 
 YAML under [`config/`](config/), loaded and validated via `pydantic-settings`
@@ -101,10 +123,11 @@ config/            # YAML: paths, sources, features, risk, backtest, models
 src/hkjc/
   common/          # config, logging, keys, time (HKT)
   data/            # scrape · parse · store (DuckDB+Parquet) · weather · holidays · live(M7)
-  features/        # as-of feature store + leakage canary (M2); nlp/ is M4
-  models/          # ProbabilityModel (PL strength) · logit · place (M2); gbm/nn/blend (M3)
-  backtest/        # walk-forward engine · pari-mutuel sim · metrics · bootstrap (M2)
-  risk/ experiments/ api/   # M5 / M3 / M6 (skeletons)
+  features/        # as-of feature store + leakage canary + design matrix (M2/M3); nlp/ is M4
+  models/          # ProbabilityModel · logit · place (M2) · gbm · nn · ensemble · calibrate · blend (M3)
+  backtest/        # walk-forward engine · pari-mutuel sim · metrics · bootstrap · dataset (M2/M3)
+  experiments/     # leaderboard · MLflow tracking · Optuna tuning (M3)
+  risk/ api/       # M5 / M6 (skeletons)
   cli.py           # Typer entry point (`hkjc`)
 tests/             # pytest suite
 fixtures/          # checked-in HTML/JSON for offline parser tests

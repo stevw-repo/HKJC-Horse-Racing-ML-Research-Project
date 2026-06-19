@@ -68,10 +68,9 @@ data/              gitignored data lake: raw/ processed/ cache/ live_odds/ mlrun
 ```
 
 Note: `models/base.py` (the `ProbabilityModel` interface emitting a per-runner
-**Plackett–Luce strength vector**), `models/logit/`, and `models/place/` exist as of M2.
-The remaining leaf subpackages (`models/gbm`, `models/nn`, `models/ensemble`,
-`models/calibrate`, `models/blend`) land in M3. `features/` and `backtest/` are populated
-(M2); `features/nlp/` is M4.
+**Plackett–Luce strength vector**), `models/logit/`, `models/place/` (M2) plus `models/gbm/`,
+`models/nn/`, `models/ensemble/`, `models/calibrate/`, `models/blend/` and `experiments/`
+(M3) all exist. `features/nlp/` is M4. `risk/` is M5; `api/` is M6.
 
 ## Configuration
 
@@ -172,12 +171,14 @@ trackwork #5, sectional archive #7, racing news #9 (M4 NLP), pedigree #11, holid
 
 ## Milestone status
 
-M0, **M1 (scraper + storage), and M2 (features + baseline + honest backtest) are
-implementation-complete.** M1: every locked source has a parser + DuckDB view + offline
-fixture test, idempotency is proven, enumeration reaches ~2006, and the full backfill is
-**stored** (1,697 meetings, 2006-09 -> 2026-06; `hkjc data-health` reports coverage). M2: the
-as-of feature store + leakage canary, the PL-strength conditional-logit baseline + Harville
-PLACE, and an honest walk-forward backtest — all green under ruff/mypy/pytest. Each
+M0, **M1 (scraper + storage), M2 (features + baseline + honest backtest), and M3 (model zoo +
+calibration + blend) are implementation-complete.** M1: every locked source has a parser +
+DuckDB view + offline fixture test, idempotency is proven, enumeration reaches ~2006, and the
+full backfill is **stored** (1,697 meetings, 2006-09 -> 2026-06; `hkjc data-health` reports
+coverage). M2: the as-of feature store + leakage canary, the PL-strength conditional-logit
+baseline + Harville PLACE, and an honest walk-forward backtest. M3: a GPU model zoo (GBMs +
+LambdaMART + tabular NNs + ensemble) behind one `ProbabilityModel`, calibration + market-blend,
+MLflow(sqlite)+Optuna, and a reproducible leaderboard. All green under ruff/mypy/pytest. Each
 milestone's exit criterion is in PLAN.md §2 — treat it as the definition of done. Forward
 race-card capture is parked with M7.
 
@@ -233,13 +234,47 @@ Pipeline: `features/build.py` -> `features_runner` (processed Parquet + DuckDB v
   rows). Speed figures use overall finish time as a proxy; true per-200m sectional capture is
   **backlogged** (a focused data-layer add, like the other M1 sources).
 
-## Next: M3 (model zoo + calibration + blend)
+## M3 (model zoo + calibration + blend) — implementation-complete
 
-Build against `features_runner` + the `ProbabilityModel` interface. M3 scope (PLAN.md §2):
-LightGBM/XGBoost(GPU)/CatBoost (CatBoost handles the high-cardinality sire/dam/jockey/trainer
-categoricals the logit can't) + LambdaMART, tabular NNs, ensembles — all behind
-`ProbabilityModel`; isotonic/Platt/temperature calibration (within-race softmax stays
-primary); the tunable market-blend stage; MLflow(local) + Optuna; a leaderboard on
-walk-forward ROI/Sharpe/log-loss/calibration. Reuse `backtest/` as-is. Good first M3 adds:
-the debut-age heuristic, and capturing sectionals (#7) for real speed figures. Add the GBM/NN
-deps via `uv add` at M3.
+Pipeline: `experiments/leaderboard.py` runs every model through `experiments/runner.py`
+(the generic walk-forward, reusing `backtest/`), logs to MLflow, and ranks them. CLI:
+`hkjc train [--models ...] [--seasons N] [--nn-epochs N]`, `hkjc tune [--model ...]`.
+
+- **Model zoo** (all behind `ProbabilityModel` -> PL strength -> within-race softmax):
+  `models/gbm/` LightGBM, XGBoost, CatBoost, LightGBM-**LambdaMART** (lambdarank, race=group);
+  `models/nn/` **MLP** + **FT-Transformer** in PyTorch trained with the *grouped within-race
+  conditional-logit (Plackett-Luce) NLL* (same likelihood as the logit), GPU + CPU-fallback,
+  minibatched by race, early-stopped; `models/ensemble/` averages member within-race probs.
+- **GPU (RTX 4060, cu124):** XGBoost/CatBoost use `device="cuda"`/`task_type="GPU"`; torch on
+  CUDA. `models/device.gpu_available()` is the single switch (`HKJC_FORCE_CPU=1` forces CPU;
+  CI is CPU-only). **Run via the venv directly** (`.venv/Scripts/python.exe`,
+  `.venv/Scripts/hkjc.exe`) for heavy jobs — `uv run` re-syncs/rebuilds each call and the
+  editable-`hkjc.exe` lock deadlocks against a running job.
+- **Design matrix** (`features/design.py`): numeric set (= `BASELINE_FEATURES`, for logit/NNs)
+  + integer-encoded categoricals (sire/dam/dam's-sire/import-type/sex/country/venue) appended
+  for the GBMs. **CatBoost** takes them natively; **XGBoost** treats them as ordinal numerics
+  (its native categoricals reject categories unseen in a training fold — common in
+  walk-forward; CatBoost/LightGBM tolerate unseen). Plus the **debut-age heuristic** ->
+  `age_at_race` now ~100% covered; `feature_version` bumped to **v1** (rebuild required).
+- **Calibration** (`models/calibrate/`): temperature (within-race; primary secondary layer),
+  isotonic, Platt. **Blend** (`models/blend/`): tunable model+market weight, renormalized.
+- **Experiments** (`experiments/`): MLflow local **sqlite** backend (the file store is rejected
+  by MLflow 3.x) under `data/mlruns`, logging params/metrics + the feature-store **data hash**;
+  Optuna HPO (`tuning.py`, time-boxed, minimizes walk-forward log-loss).
+- **Leaderboard result (full walk-forward, feature_version v1, ranked by model-only WIN ROI):**
+  xgboost -17.1%, logit -17.3%, mlp/ft_transformer -19.1%, ensemble -19.5%, catboost -20.4%,
+  lightgbm -20.7%, lambdamart -22.0%. **Every model loses ~the takeout — still no edge beyond
+  the market** (PLAN §1F holds across the zoo). Key finding: models trained on the *grouped*
+  within-race likelihood (logit, MLP, FT-Transformer) are far better **calibrated** (ECE
+  ~0.002, top-1 ~0.24) than the pointwise GBMs (ECE ~0.05, top-1 ~0.15) — the GBMs optimize
+  binary log-loss, so their raw-margin softmax is over-confident and *needs* the calibration
+  layer / a grouped objective. Reproducible from MLflow (config + data hash).
+
+## Next: M4 (NLP track, English)
+
+Scrape/parse English stewards' reports + comments-on-running -> **lagged** structured signals
+(`text_event_time < race_off_time`) via spaCy rules + lexicon + sentence-transformer
+embeddings; an ablatable feature group measured by its marginal ROI/log-loss contribution
+(PLAN.md §2 M4). Good non-M4 adds still open: capture **sectionals (#7)** for real speed
+figures (background chip), GBM **calibration/grouped-objective** tuning, and Optuna sweeps at
+scale. Add spaCy/sentence-transformers via `uv add` at M4.

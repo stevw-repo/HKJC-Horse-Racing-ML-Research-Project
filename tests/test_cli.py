@@ -34,10 +34,17 @@ def test_doctor_runs() -> None:
     assert "Enabled alternative data sources" in result.stdout
 
 
-def test_stub_command_runs() -> None:
-    result = runner.invoke(app, ["train"])
+def test_predict_stub_runs() -> None:
+    result = runner.invoke(app, ["predict"])
     assert result.exit_code == 0
-    assert "M3" in result.stdout
+    assert "M2/M7" in result.stdout
+
+
+def test_train_help_runs() -> None:
+    # `train` now runs the real leaderboard, so only smoke its wiring via --help (no training).
+    result = runner.invoke(app, ["train", "--help"])
+    assert result.exit_code == 0
+    assert "leaderboard" in result.stdout.lower()
 
 
 def test_scrape_requires_date() -> None:

@@ -67,6 +67,20 @@ class CalibrationBins:
     count: list[int]
 
 
+def expected_calibration_error(prob: FloatArray, outcome: FloatArray, n_bins: int = 10) -> float:
+    """Weighted mean gap between predicted and observed rate across probability bins (ECE)."""
+    if prob.size == 0:
+        return 0.0
+    bins = calibration_bins(prob, outcome, n_bins)
+    total = float(sum(bins.count))
+    if total == 0:
+        return 0.0
+    return sum(
+        c / total * abs(p - o)
+        for p, o, c in zip(bins.pred_mean, bins.obs_rate, bins.count, strict=True)
+    )
+
+
 def calibration_bins(prob: FloatArray, outcome: FloatArray, n_bins: int = 10) -> CalibrationBins:
     """Bin predictions into ``n_bins`` equal-width buckets over [0,1]."""
     edges = np.linspace(0.0, 1.0, n_bins + 1)

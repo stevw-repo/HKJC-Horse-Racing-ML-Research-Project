@@ -311,13 +311,27 @@ def _add_bio(runs: pl.DataFrame, cfg: AppConfig) -> pl.DataFrame:
     if bio.is_empty():
         bio = pl.DataFrame(schema=dict.fromkeys(cols, pl.String))
     runs = runs.join(bio, on="horse_id", how="left")
-    runs = runs.with_columns(
-        age_at_race=pl.when(pl.col("birth_year").is_not_null())
-        .then(pl.col("race_date").dt.year() - pl.col("birth_year"))
-        .otherwise(None)
-        .cast(pl.Float64),
+    # Layered age-at-race (decided 2026-06-15): exact birth_year where the horse was active at
+    # scrape; else a debut-age heuristic (HK-debut year - typical debut age by import type:
+    # ~3 for griffin imports PPG/ISG, ~4 for previously-raced PP); else null. age_imputed
+    # flags everything that is not the exact scraped value, so models can down-weight it.
+    debut_year = pl.col("race_date").dt.year().min().over("horse_id")
+    debut_age = (
+        pl.when(pl.col("import_type").is_in(["PPG", "ISG"]))
+        .then(3)
+        .when(pl.col("import_type") == "PP")
+        .then(4)
+        .otherwise(4)
     )
-    return runs.with_columns(age_imputed=pl.col("age_at_race").is_null().cast(pl.Int64))
+    birth_year_est = (debut_year - debut_age).cast(pl.Int64)
+    runs = runs.with_columns(
+        age_imputed=pl.col("birth_year").is_null().cast(pl.Int64),
+        _birth_year=pl.coalesce([pl.col("birth_year"), birth_year_est]),
+    )
+    runs = runs.with_columns(
+        age_at_race=(pl.col("race_date").dt.year() - pl.col("_birth_year")).cast(pl.Float64)
+    )
+    return runs.drop("_birth_year")
 
 
 def _add_trial_recency(runs: pl.DataFrame, cfg: AppConfig) -> pl.DataFrame:
