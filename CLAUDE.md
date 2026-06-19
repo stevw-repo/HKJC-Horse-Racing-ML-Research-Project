@@ -132,7 +132,8 @@ climate publishes after the month completes, so very recent meetings have no wea
 CLI: `hkjc scrape --date YYYY-MM-DD [--force]`, `hkjc backfill [--limit N] [--since ...]`,
 `hkjc scrape-horses [--limit N]`, `hkjc scrape-people [--limit N]`,
 `hkjc scrape-weather [--since-year Y]`, `hkjc scrape-holidays`,
-`hkjc scrape-trials [--limit N]`, `hkjc scrape-trackwork [--limit N]`, `hkjc data-health`.
+`hkjc scrape-trials [--limit N]`, `hkjc scrape-trackwork [--limit N]`,
+`hkjc scrape-sectionals [--limit N]` (#7), `hkjc data-health`.
 **Public holidays** (#14) are ingested from gov.hk open data (`data/holidays.py` →
 `public_holidays` view); the feed is served with a BOM and spans only ~current +/- 1 year.
 **Barrier trials** (#4, `parse/trials.py` → `barrier_trials` view): per-batch runs from
@@ -230,9 +231,13 @@ Pipeline: `features/build.py` -> `features_runner` (processed Parquet + DuckDB v
   market** (the expected baseline outcome, PLAN §1F); top-1 hit 24% vs 8% base = real ranking
   signal. **Leakage canary clean**: fitted weight 0.011 of mean |coef|; random-pick sentinel
   ROI -19% (no edge). Calibration PNG at `data/processed/backtest/calibration_win.png`.
-- **Known gap — sectionals (#7):** declared enabled in config but **never built in M1** (0
-  rows). Speed figures use overall finish time as a proxy; true per-200m sectional capture is
-  **backlogged** (a focused data-layer add, like the other M1 sources).
+- **Sectionals (#7) — now captured (M3 follow-up):** `parse/sectionals.py` parses the
+  `displaysectionaltime` page (per runner per section: position, margin, section time, and the
+  per-200m split; section times sum to the final time). `sectionals` DuckDB view + meeting
+  partitions; `hkjc scrape-sectionals [--limit N] [--since ...]` (idempotent, frozen-skip;
+  URL date is `DD/MM/YYYY`, no `Racecourse` param). Offline fixture test. **Backfill pending**
+  (user runs `hkjc scrape-sectionals` like the M1 backfill); once stored, the M2 speed-figure
+  proxy can switch to real splits (a clean feature-store add).
 
 ## M3 (model zoo + calibration + blend) — implementation-complete
 
@@ -275,6 +280,7 @@ Pipeline: `experiments/leaderboard.py` runs every model through `experiments/run
 Scrape/parse English stewards' reports + comments-on-running -> **lagged** structured signals
 (`text_event_time < race_off_time`) via spaCy rules + lexicon + sentence-transformer
 embeddings; an ablatable feature group measured by its marginal ROI/log-loss contribution
-(PLAN.md §2 M4). Good non-M4 adds still open: capture **sectionals (#7)** for real speed
-figures (background chip), GBM **calibration/grouped-objective** tuning, and Optuna sweeps at
-scale. Add spaCy/sentence-transformers via `uv add` at M4.
+(PLAN.md §2 M4). Good non-M4 adds still open: **backfill sectionals** (`hkjc scrape-sectionals`,
+then switch the M2 speed-figure proxy to real per-200m splits), GBM
+**calibration/grouped-objective** tuning, and Optuna sweeps at scale. Add
+spaCy/sentence-transformers via `uv add` at M4.

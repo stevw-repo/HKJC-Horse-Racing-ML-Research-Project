@@ -55,6 +55,7 @@ uv run hkjc scrape-people                    # jockey + trainer season stats
 uv run hkjc scrape-weather --since-year 2006 # HKO daily-climate temperatures
 uv run hkjc scrape-trials                    # barrier trials
 uv run hkjc scrape-trackwork                 # trackwork (gallop) records
+uv run hkjc scrape-sectionals                # per-200m sectional times (#7)
 uv run hkjc scrape-holidays                  # HK public holidays
 
 uv run hkjc data-health                      # coverage report (meetings/races/rows by season)
@@ -65,7 +66,7 @@ full WIN→QUARTET dividends), going + rail position, horse profiles (locked bio
 per-run form), jockey/trainer season stats, HKO daily temperatures, barrier trials,
 trackwork, public holidays. See `PLAN.md` §0 for the locked scope (alt sources
 3,4,5,7,9,11,14; #6 vet-list and #8 gear-change declarations were dropped as forward-only).
-Per-200m **sectionals (#7) are not yet captured** — backlogged for M3.
+Per-200m **sectionals (#7)** are captured via `hkjc scrape-sectionals` (run it to backfill).
 
 > A full ~20-season backfill is a multi-hour crawl (~1,600 meetings × ~11 pages). It's
 > idempotent and cached, so bound the first run with `--since` or run it overnight.

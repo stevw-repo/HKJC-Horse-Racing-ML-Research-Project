@@ -218,3 +218,25 @@ class TrackworkRecord(BaseModel):
     racecourse_track: str | None = None  # e.g. "Conghua TroR"
     workouts: str | None = None  # e.g. "TroR TroR Canter (R.B.)"
     gear: str | None = None
+
+
+class SectionalSplit(BaseModel):
+    """One runner's split for one section of a race (source #7, displaysectionaltime).
+
+    ``section_index`` is 1-based from the start. ``section_time_s`` is the time to run that
+    section (the section times sum to ``final_time_s``); ``split_200m_s`` is the per-200m pace
+    within the section (the blue ``sectional_200`` value; absent for the first section). The
+    home-grown speed figures (M2/M3) consume these splits.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    saddle: int
+    horse_id: str | None
+    finishing_order: int | None
+    section_index: int
+    running_position: int | None  # position at the section marker
+    margin_raw: str | None  # margin behind leader at the marker, e.g. "1-1/4"
+    section_time_s: float | None  # time to run this section (sums to final_time_s)
+    split_200m_s: float | None  # per-200m pace within the section
+    final_time_s: float | None  # the runner's overall finishing time

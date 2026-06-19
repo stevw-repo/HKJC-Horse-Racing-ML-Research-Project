@@ -38,6 +38,7 @@ VIEW_TABLES = (
     "public_holidays",
     "barrier_trials",
     "trackwork",
+    "sectionals",
 )
 
 _RACES_SCHEMA: dict[str, pl.DataType] = {
@@ -187,6 +188,20 @@ _TRACKWORK_SCHEMA: dict[str, pl.DataType] = {
     "workouts": pl.String(),
     "gear": pl.String(),
 }
+_SECTIONALS_SCHEMA: dict[str, pl.DataType] = {
+    "race_date": pl.Date(),
+    "venue": pl.String(),
+    "race_no": pl.Int64(),
+    "saddle": pl.Int64(),
+    "horse_id": pl.String(),
+    "finishing_order": pl.Int64(),
+    "section_index": pl.Int64(),
+    "running_position": pl.Int64(),
+    "margin_raw": pl.String(),
+    "section_time_s": pl.Float64(),
+    "split_200m_s": pl.Float64(),
+    "final_time_s": pl.Float64(),
+}
 _SCHEMAS = {"races": _RACES_SCHEMA, "results": _RESULTS_SCHEMA, "dividends": _DIVIDENDS_SCHEMA}
 
 
@@ -316,6 +331,16 @@ def write_trackwork(raw_dir: Path, work_date: date, records: list[TrackworkRecor
         work_dir / f"{work_date:%Y-%m-%d}.parquet"
     )
     return len(rows)
+
+
+def write_sectionals(raw_dir: Path, race_date: date, venue: str, rows: list[dict[str, Any]]) -> int:
+    """Write a meeting's sectional rows (one per runner/section, tagged with race_no) to a
+    meeting-partitioned Parquet file; return row count. Frozen once results are final."""
+    directory = _meeting_dir(raw_dir, "sectionals", race_date, venue)
+    directory.mkdir(parents=True, exist_ok=True)
+    full = [{"race_date": race_date, "venue": venue, **row} for row in rows]
+    pl.DataFrame(full, schema=_SECTIONALS_SCHEMA).write_parquet(directory / "sectionals.parquet")
+    return len(full)
 
 
 def refresh_views(con: Any, raw_dir: Path) -> None:

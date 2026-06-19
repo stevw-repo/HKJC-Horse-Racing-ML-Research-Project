@@ -205,6 +205,21 @@ def scrape_trackwork(
     )
 
 
+@app.command(name="scrape-sectionals")
+def scrape_sectionals(
+    limit: Annotated[int | None, typer.Option(help="Only the newest N meetings.")] = None,
+    since: Annotated[str | None, typer.Option(help="Only meetings on/after YYYY-MM-DD.")] = None,
+    force: Annotated[bool, typer.Option(help="Re-fetch even if already stored.")] = False,
+) -> None:
+    """Scrape per-race sectional times (#7) for stored meetings, idempotently (M3)."""
+    from hkjc.data import pipeline
+
+    summary = pipeline.scrape_sectionals(
+        limit=limit, since=date.fromisoformat(since) if since else None, force=force
+    )
+    typer.echo(f"Sectionals: {summary['meetings']} meetings, {summary['sectional_rows']} rows.")
+
+
 @app.command(name="scrape-holidays")
 def scrape_holidays() -> None:
     """Ingest the HK public-holiday calendar from gov.hk open data (M1)."""
@@ -232,6 +247,7 @@ def data_health() -> None:
     typer.echo(f"  holidays     : {s['public_holidays_rows']}")
     typer.echo(f"  trials       : {s['barrier_trials_rows']}")
     typer.echo(f"  trackwork    : {s['trackwork_rows']}")
+    typer.echo(f"  sectionals   : {s['sectionals_rows']}")
     typer.echo(f"  manifest urls: {s['manifest_urls']}")
     for season, n in sorted(s["seasons"].items()):
         typer.echo(f"    season {season}: {n} meetings")

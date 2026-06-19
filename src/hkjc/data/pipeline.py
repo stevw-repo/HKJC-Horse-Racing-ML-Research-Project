@@ -25,6 +25,7 @@ from hkjc.data.parse.results import (
     parse_race_result,
     parse_venue,
 )
+from hkjc.data.parse.sectionals import parse_race_sectionals
 from hkjc.data.parse.trials import parse_barrier_trials
 from hkjc.data.scrape.client import Fetcher
 from hkjc.data.store.manifest import Manifest
@@ -35,6 +36,7 @@ from hkjc.data.store.writer import (
     write_horse_profile,
     write_meeting,
     write_person_profile,
+    write_sectionals,
     write_trackwork,
     write_trials,
     write_weather,
@@ -488,6 +490,86 @@ def scrape_trackwork(
     return {"trackwork_dates": scraped, "trackwork_rows": total_rows}
 
 
+def sectional_url(base: str, day: date, race_no: int) -> str:
+    return f"{base}/displaysectionaltime?racedate={day:%d/%m/%Y}&RaceNo={race_no}"
+
+
+def stored_meeting_races(cfg: AppConfig | None = None) -> list[tuple[date, str, list[int]]]:
+    """Stored meetings as (date, venue, sorted race numbers) from the races view."""
+    cfg = cfg or get_config()
+    if not cfg.paths.duckdb_path.is_file():
+        return []
+    con = duckdb.connect(str(cfg.paths.duckdb_path))
+    try:
+        rows = con.execute(
+            "SELECT race_date, venue, race_no FROM races ORDER BY race_date, venue, race_no"
+        ).fetchall()
+    except duckdb.Error:
+        return []
+    finally:
+        con.close()
+    meetings: dict[tuple[date, str], list[int]] = {}
+    for race_date, venue, race_no in rows:
+        meetings.setdefault((race_date, venue), []).append(int(race_no))
+    return [(d, v, nos) for (d, v), nos in meetings.items()]
+
+
+def scrape_sectionals(
+    *,
+    cfg: AppConfig | None = None,
+    limit: int | None = None,
+    since: date | None = None,
+    force: bool = False,
+    on_meeting: Callable[[date, str, int], None] | None = None,
+) -> dict[str, int]:
+    """Scrape per-race sectional times for stored meetings (#7).
+
+    The ``displaysectionaltime`` page is one race; we fetch every race of each stored meeting
+    and store the splits meeting-partitioned. Idempotent: a frozen (past) meeting recorded in
+    the manifest is skipped.
+    """
+    cfg = cfg or get_config()
+    base = cfg.sources.hkjc_base_url
+    fetcher = Fetcher(
+        cfg.paths.cache_dir, rate_per_sec=DEFAULT_RATE_PER_SEC, concurrency=DEFAULT_CONCURRENCY
+    )
+    meetings = sorted(stored_meeting_races(cfg))
+    if since is not None:
+        meetings = [m for m in meetings if m[0] >= since]
+    if limit is not None:
+        meetings = meetings[-limit:]
+
+    total_rows = 0
+    scraped = 0
+    with Manifest(cfg.paths.duckdb_path) as manifest:
+        for day, venue, race_nos in meetings:
+            marker = sectional_url(base, day, 0)  # per-meeting idempotency marker
+            if day < now_hkt().date() and not force and manifest.has(marker):
+                continue
+            results = fetcher.fetch_many([sectional_url(base, day, n) for n in race_nos])
+            rows: list[dict[str, Any]] = []
+            for race_no, result in zip(race_nos, results, strict=True):
+                rows.extend(
+                    {"race_no": race_no, **split.model_dump()}
+                    for split in parse_race_sectionals(result.text)
+                )
+            n = write_sectionals(cfg.paths.raw_dir, day, venue, rows)
+            last = results[-1] if results else None
+            manifest.record(
+                marker,
+                "sectionals",
+                last.content_hash if last else "",
+                last.status if last else 0,
+                n,
+            )
+            total_rows += n
+            scraped += 1
+            if on_meeting is not None:
+                on_meeting(day, venue, n)
+        refresh_views(manifest.con, cfg.paths.raw_dir)
+    return {"meetings": scraped, "sectional_rows": total_rows}
+
+
 def ingest_holidays(*, cfg: AppConfig | None = None) -> dict[str, int]:
     """Ingest the gov.hk public-holiday calendar (#14)."""
     cfg = cfg or get_config()
@@ -516,6 +598,7 @@ def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
         "public_holidays_rows": 0,
         "barrier_trials_rows": 0,
         "trackwork_rows": 0,
+        "sectionals_rows": 0,
         "meetings": 0,
         "manifest_urls": 0,
         "date_min": None,
@@ -537,6 +620,7 @@ def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
             "public_holidays",
             "barrier_trials",
             "trackwork",
+            "sectionals",
         ):
             try:
                 row = con.execute(f"SELECT count(*) FROM {table}").fetchone()
