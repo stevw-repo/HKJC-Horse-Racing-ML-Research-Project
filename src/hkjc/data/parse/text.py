@@ -1,17 +1,17 @@
-"""Parsers for HKJC English race text (source #9): comments-on-running + report blobs.
+"""Parser for HKJC English comments-on-running (source #9, the ``corunning`` page).
 
-``corunning`` is a clean per-runner table (Placing / HorseNo / Horse / Jockey / Gear /
-Comment) -- the structured lagged signal the NLP pipeline is built on. The prose reports
-(``racereportfull`` stewards' report, ``veterinaryrecord``, ``exceptionalfactors``) are
-captured as best-effort text blobs for the corpus. All of it is **lagged** (PLAN.md §1C): the
-meeting date is the text_event_time, valid only for a horse's later races.
+A clean per-runner table (Placing / HorseNo / Horse / Jockey / Gear / Comment, horse_id in the
+anchor) -- the structured lagged signal the NLP pipeline is built on. **Lagged** (PLAN.md §1C):
+the meeting date is the text_event_time, valid only for a horse's later races. (The page is
+addressed by ``corunning?Date=YYYYMMDD&RaceNo=N``; the meeting-level prose reports were dropped
+because their endpoints do not reliably honour the date param.)
 """
 
 from __future__ import annotations
 
 from selectolax.parser import HTMLParser, Node
 
-from hkjc.data.models import CommentOnRunning, RaceText
+from hkjc.data.models import CommentOnRunning
 from hkjc.data.parse.common import clean, id_from_node, to_int
 
 
@@ -72,15 +72,3 @@ def parse_comments_on_running(html: str) -> list[CommentOnRunning]:
             )
         return out
     return []
-
-
-def parse_race_text(html: str, source: str) -> list[RaceText]:
-    """Best-effort extraction of a report page's content tables as one text blob."""
-    tree = HTMLParser(html)
-    for tag in tree.css("script, style"):
-        tag.decompose()
-    blocks = [clean(tb.text()) for tb in _tables_with_class(tree, "table_bd")]
-    text = " ".join(b for b in blocks if len(b) > 40)
-    if not text:
-        return []
-    return [RaceText(source=source, race_no=None, horse_id=None, text=text)]

@@ -40,7 +40,6 @@ VIEW_TABLES = (
     "trackwork",
     "sectionals",
     "comments_on_running",
-    "race_text",
 )
 
 _RACES_SCHEMA: dict[str, pl.DataType] = {
@@ -215,14 +214,6 @@ _COMMENTS_SCHEMA: dict[str, pl.DataType] = {
     "gear": pl.String(),
     "comment": pl.String(),
 }
-_RACE_TEXT_SCHEMA: dict[str, pl.DataType] = {
-    "race_date": pl.Date(),
-    "venue": pl.String(),
-    "source": pl.String(),
-    "race_no": pl.Int64(),
-    "horse_id": pl.String(),
-    "text": pl.String(),
-}
 _SCHEMAS = {"races": _RACES_SCHEMA, "results": _RESULTS_SCHEMA, "dividends": _DIVIDENDS_SCHEMA}
 
 
@@ -370,15 +361,6 @@ def write_comments(raw_dir: Path, race_date: date, venue: str, rows: list[dict[s
     directory.mkdir(parents=True, exist_ok=True)
     full = [{"race_date": race_date, "venue": venue, **row} for row in rows]
     pl.DataFrame(full, schema=_COMMENTS_SCHEMA).write_parquet(directory / "comments.parquet")
-    return len(full)
-
-
-def write_race_text(raw_dir: Path, race_date: date, venue: str, rows: list[dict[str, Any]]) -> int:
-    """Write a meeting's report text blobs (one per source) to Parquet."""
-    directory = _meeting_dir(raw_dir, "race_text", race_date, venue)
-    directory.mkdir(parents=True, exist_ok=True)
-    full = [{"race_date": race_date, "venue": venue, **row} for row in rows]
-    pl.DataFrame(full, schema=_RACE_TEXT_SCHEMA).write_parquet(directory / "race_text.parquet")
     return len(full)
 
 

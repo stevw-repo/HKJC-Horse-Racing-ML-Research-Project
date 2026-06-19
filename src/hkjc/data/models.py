@@ -258,18 +258,3 @@ class CommentOnRunning(BaseModel):
     jockey: str | None
     gear: str | None
     comment: str
-
-
-class RaceText(BaseModel):
-    """A meeting/race-level English text blob (stewards' report / vet / exceptional factors).
-
-    Stored verbatim for the NLP corpus; ``source`` is the page it came from. Lagged like all
-    race text (the meeting date is the text_event_time).
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    source: str  # racereportfull | veterinaryrecord | exceptionalfactors
-    race_no: int | None  # None for meeting-level reports
-    horse_id: str | None
-    text: str

@@ -232,11 +232,11 @@ def scrape_text(
     since: Annotated[str | None, typer.Option(help="Only meetings on/after YYYY-MM-DD.")] = None,
     force: Annotated[bool, typer.Option(help="Re-fetch even if already stored.")] = False,
 ) -> None:
-    """Scrape English race text (#9): comments-on-running + report blobs, idempotently (M4)."""
+    """Scrape English comments-on-running (#9) per race, idempotently (M4)."""
     from hkjc.data import pipeline
 
-    def _progress(day: date, venue: str, comments: int, blobs: int) -> None:
-        typer.echo(f"  {day} {venue}: {comments} comments, {blobs} report blobs")
+    def _progress(day: date, venue: str, comments: int) -> None:
+        typer.echo(f"  {day} {venue}: {comments} comments")
 
     summary = pipeline.scrape_text(
         limit=limit,
@@ -244,10 +244,7 @@ def scrape_text(
         force=force,
         on_meeting=_progress,
     )
-    typer.echo(
-        f"Text: {summary['meetings']} meetings, {summary['comments']} comments, "
-        f"{summary['report_blobs']} report blobs."
-    )
+    typer.echo(f"Text: {summary['meetings']} meetings, {summary['comments']} comments.")
 
 
 @app.command(name="scrape-holidays")
@@ -279,7 +276,6 @@ def data_health() -> None:
     typer.echo(f"  trackwork    : {s['trackwork_rows']}")
     typer.echo(f"  sectionals   : {s['sectionals_rows']}")
     typer.echo(f"  comments     : {s['comments_on_running_rows']}")
-    typer.echo(f"  race text    : {s['race_text_rows']}")
     typer.echo(f"  manifest urls: {s['manifest_urls']}")
     for season, n in sorted(s["seasons"].items()):
         typer.echo(f"    season {season}: {n} meetings")

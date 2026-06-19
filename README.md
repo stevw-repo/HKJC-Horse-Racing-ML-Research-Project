@@ -56,7 +56,7 @@ uv run hkjc scrape-weather --since-year 2006 # HKO daily-climate temperatures
 uv run hkjc scrape-trials                    # barrier trials
 uv run hkjc scrape-trackwork                 # trackwork (gallop) records
 uv run hkjc scrape-sectionals                # per-200m sectional times (#7)
-uv run hkjc scrape-text                      # comments-on-running + report text (#9, NLP)
+uv run hkjc scrape-text                      # comments-on-running per race (#9, NLP)
 uv run hkjc scrape-holidays                  # HK public holidays
 
 uv run hkjc data-health                      # coverage report (meetings/races/rows by season)
@@ -118,7 +118,7 @@ Scrape English race text and fold it in as a **lagged** feature group (a comment
 run, so it is only a feature for the horse's *later* races — PLAN §1C), then ablate it.
 
 ```bash
-uv run hkjc scrape-text       # corunning comments + stewards/vet/exceptional report blobs (#9)
+uv run hkjc scrape-text       # comments-on-running per race (corunning, #9)
 uv run hkjc features nlp      # encode comments -> lexicon flags + MiniLM anchor-similarities
 uv run hkjc features build    # rebuild as v2 (joins + lags the nlp_text group)
 uv run hkjc ablate            # walk-forward logit with vs without the NLP group (marginal effect)

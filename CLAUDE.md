@@ -284,13 +284,19 @@ Pipeline: `data/parse/text.py` (scrape) -> `features/nlp/` (encode) -> lagged `n
 feature group in `features/build.py` -> `experiments/ablation.py`. CLI: `hkjc scrape-text`,
 `hkjc features nlp`, `hkjc ablate`.
 
-- **Text capture (#9):** the endpoints (PLAN's "TBC" paths, found by recon) are `corunning`
-  (Comments on Running -- a clean **per-runner** table: Placing/HorseNo/Horse/Jockey/Gear/
-  Comment, horse_id in the anchor) plus the prose reports `racereportfull` (stewards'
-  incidents), `veterinaryrecord`, `exceptionalfactors`. `corunning` -> structured
-  `comments_on_running` view; the reports -> `race_text` text blobs. `hkjc scrape-text
-  [--limit N] [--since ...]` (per-race corunning + per-meeting reports; idempotent, frozen;
-  URL date `YYYY/MM/DD`). Offline fixture test.
+- **Text capture (#9):** `corunning` (Comments on Running -- a clean **per-runner** table:
+  Placing/HorseNo/Horse/Jockey/Gear/Comment, horse_id in the anchor) -> `comments_on_running`
+  view. **URL is `corunning?Date=YYYYMMDD&RaceNo=N` (no `Racecourse` param).** Critical gotcha:
+  the page **silently ignores `racedate=YYYY/MM/DD`** (and every other param form) and returns
+  the *latest* meeting -- so the first cut stored the same latest-meeting comments for every
+  date. Always validate a per-date page by checking its data actually differs across dates (an
+  old date with no comments correctly returns empty with the right param). `hkjc scrape-text
+  [--limit N] [--since ...]` (per-race; idempotent, frozen). Offline fixture test. The
+  meeting-level prose reports (`racereportfull`/`veterinaryrecord`/`exceptionalfactors`) were
+  **dropped** -- those endpoints don't reliably honour the date (vet/exceptional return the
+  latest *available* record), so they'd store garbage; a browser-recon follow-up could recover
+  them later (like trackwork). NOTE sectionals' `displaysectionaltime?racedate=DD/MM/YYYY`
+  **does** honour the date (verified) -- only the text endpoints are quirky.
 - **Lagged discipline (PLAN §1C):** a comment describes the run it belongs to, so each NLP
   signal is **shifted one run forward per horse** in `_add_nlp` -- the value seen for a target
   race is the horse's *previous* comment (`text_event_time < race_off_time`). The leakage

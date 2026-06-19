@@ -26,7 +26,7 @@ from hkjc.data.parse.results import (
     parse_venue,
 )
 from hkjc.data.parse.sectionals import parse_race_sectionals
-from hkjc.data.parse.text import parse_comments_on_running, parse_race_text
+from hkjc.data.parse.text import parse_comments_on_running
 from hkjc.data.parse.trials import parse_barrier_trials
 from hkjc.data.scrape.client import Fetcher
 from hkjc.data.store.manifest import Manifest
@@ -38,7 +38,6 @@ from hkjc.data.store.writer import (
     write_horse_profile,
     write_meeting,
     write_person_profile,
-    write_race_text,
     write_sectionals,
     write_trackwork,
     write_trials,
@@ -573,15 +572,10 @@ def scrape_sectionals(
     return {"meetings": scraped, "sectional_rows": total_rows}
 
 
-REPORT_SOURCES = ("racereportfull", "veterinaryrecord", "exceptionalfactors")
-
-
-def comments_url(base: str, day: date, venue: str, race_no: int) -> str:
-    return f"{base}/corunning?racedate={day:%Y/%m/%d}&Racecourse={venue}&RaceNo={race_no}"
-
-
-def report_url(base: str, source: str, day: date, venue: str) -> str:
-    return f"{base}/{source}?racedate={day:%Y/%m/%d}&Racecourse={venue}"
+def comments_url(base: str, day: date, race_no: int) -> str:
+    # corunning honours ``Date=YYYYMMDD`` (NOT ``racedate=YYYY/MM/DD``, which it silently
+    # ignores -> always the latest meeting); there is no ``Racecourse`` param (one per date).
+    return f"{base}/corunning?Date={day:%Y%m%d}&RaceNo={race_no}"
 
 
 def scrape_text(
@@ -590,12 +584,14 @@ def scrape_text(
     limit: int | None = None,
     since: date | None = None,
     force: bool = False,
-    on_meeting: Callable[[date, str, int, int], None] | None = None,
+    on_meeting: Callable[[date, str, int], None] | None = None,
 ) -> dict[str, int]:
-    """Scrape English race text (#9): per-race comments-on-running + per-meeting report blobs.
+    """Scrape English comments-on-running (#9) per race for each stored meeting.
 
-    All text is **lagged** (PLAN.md §1C) -- stored with the meeting date as its event time.
-    Idempotent: a frozen past meeting recorded in the manifest is skipped.
+    Lagged text (PLAN.md §1C): the meeting date is the text_event_time. Idempotent: a frozen
+    past meeting recorded in the manifest is skipped. (The meeting-level report pages --
+    racereportfull / veterinaryrecord / exceptionalfactors -- do **not** reliably honour the
+    date param, so only the reliable per-runner comments are captured.)
     """
     cfg = cfg or get_config()
     base = cfg.sources.hkjc_base_url
@@ -609,14 +605,13 @@ def scrape_text(
         meetings = meetings[-limit:]
 
     total_comments = 0
-    total_blobs = 0
     scraped = 0
     with Manifest(cfg.paths.duckdb_path) as manifest:
         for day, venue, race_nos in meetings:
-            marker = f"{base}/corunning?racedate={day:%Y/%m/%d}&Racecourse={venue}"
+            marker = f"{base}/corunning?Date={day:%Y%m%d}"
             if day < now_hkt().date() and not force and manifest.has(marker):
                 continue
-            cor = fetcher.fetch_many([comments_url(base, day, venue, n) for n in race_nos])
+            cor = fetcher.fetch_many([comments_url(base, day, n) for n in race_nos])
             crows: list[dict[str, Any]] = []
             for race_no, res in zip(race_nos, cor, strict=True):
                 crows.extend(
@@ -624,26 +619,16 @@ def scrape_text(
                     for c in parse_comments_on_running(res.text)
                 )
             nc = write_comments(cfg.paths.raw_dir, day, venue, crows)
-            reps = fetcher.fetch_many([report_url(base, s, day, venue) for s in REPORT_SOURCES])
-            trows: list[dict[str, Any]] = []
-            for source, res in zip(REPORT_SOURCES, reps, strict=True):
-                trows.extend(rt.model_dump() for rt in parse_race_text(res.text, source))
-            nt = write_race_text(cfg.paths.raw_dir, day, venue, trows)
             last = cor[0] if cor else None
             manifest.record(
-                marker,
-                "text",
-                last.content_hash if last else "",
-                last.status if last else 0,
-                nc + nt,
+                marker, "text", last.content_hash if last else "", last.status if last else 0, nc
             )
             total_comments += nc
-            total_blobs += nt
             scraped += 1
             if on_meeting is not None:
-                on_meeting(day, venue, nc, nt)
+                on_meeting(day, venue, nc)
         refresh_views(manifest.con, cfg.paths.raw_dir)
-    return {"meetings": scraped, "comments": total_comments, "report_blobs": total_blobs}
+    return {"meetings": scraped, "comments": total_comments}
 
 
 def ingest_holidays(*, cfg: AppConfig | None = None) -> dict[str, int]:
@@ -676,7 +661,6 @@ def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
         "trackwork_rows": 0,
         "sectionals_rows": 0,
         "comments_on_running_rows": 0,
-        "race_text_rows": 0,
         "meetings": 0,
         "manifest_urls": 0,
         "date_min": None,
@@ -700,7 +684,6 @@ def coverage_summary(cfg: AppConfig | None = None) -> dict[str, Any]:
             "trackwork",
             "sectionals",
             "comments_on_running",
-            "race_text",
         ):
             try:
                 row = con.execute(f"SELECT count(*) FROM {table}").fetchone()
