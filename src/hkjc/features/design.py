@@ -21,7 +21,7 @@ from dataclasses import dataclass
 import numpy as np
 import polars as pl
 
-from hkjc.features.base import BASELINE_FEATURES
+from hkjc.features.base import BASELINE_FEATURES, numeric_design_features
 from hkjc.features.store import features_path
 from hkjc.models.base import FloatArray
 
@@ -52,9 +52,14 @@ class Design:
         return self.x[:, self.numeric_indices]
 
 
-def build_design(df: pl.DataFrame) -> Design:
-    """Build the combined numeric + integer-encoded categorical design matrix."""
-    numeric = df.select(NUMERIC_FEATURES).to_numpy().astype(np.float64)
+def build_design(df: pl.DataFrame, *, include_nlp: bool = False) -> Design:
+    """Build the combined numeric + integer-encoded categorical design matrix.
+
+    ``include_nlp`` appends the lagged NLP group to the numeric block (M4 ablation); off by
+    default so the M3 leaderboard is unaffected.
+    """
+    numeric_cols = numeric_design_features(include_nlp)
+    numeric = df.select(numeric_cols).to_numpy().astype(np.float64)
     cat_cols: list[FloatArray] = []
     for col in CATEGORICAL_FEATURES:
         if col in df.columns:
@@ -62,11 +67,11 @@ def build_design(df: pl.DataFrame) -> Design:
             cat_cols.append(codes.to_numpy().astype(np.float64))
         else:
             cat_cols.append(np.zeros(df.height, dtype=np.float64))
-    n_num = len(NUMERIC_FEATURES)
+    n_num = len(numeric_cols)
     x = np.column_stack([numeric, *cat_cols]) if cat_cols else numeric
     return Design(
         x=x,
-        feature_names=[*NUMERIC_FEATURES, *CATEGORICAL_FEATURES],
+        feature_names=[*numeric_cols, *CATEGORICAL_FEATURES],
         numeric_indices=list(range(n_num)),
         categorical_indices=list(range(n_num, n_num + len(CATEGORICAL_FEATURES))),
     )

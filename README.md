@@ -19,8 +19,8 @@ conventions and current state of this repo.
 | **M1** | Incremental scraper + storage | ✅ done — backfill stored (1,697 meetings, 2006–2026) |
 | **M2** | Features + baseline conditional-logit + honest backtest | ✅ done |
 | **M3** | Model zoo (GBMs + LambdaMART + tabular NNs) + calibration + market blend | ✅ done |
-| M4 | NLP track (English) | ◻ next |
-| M5 | Risk / staking sweeps | — |
+| **M4** | NLP track (English): comments-on-running -> lagged signals + ablation | ✅ done |
+| M5 | Risk / staking sweeps | ◻ next |
 | M6 | UI (React + FastAPI) | — |
 | M7 | Live ops + odds logging | — |
 
@@ -56,6 +56,7 @@ uv run hkjc scrape-weather --since-year 2006 # HKO daily-climate temperatures
 uv run hkjc scrape-trials                    # barrier trials
 uv run hkjc scrape-trackwork                 # trackwork (gallop) records
 uv run hkjc scrape-sectionals                # per-200m sectional times (#7)
+uv run hkjc scrape-text                      # comments-on-running + report text (#9, NLP)
 uv run hkjc scrape-holidays                  # HK public holidays
 
 uv run hkjc data-health                      # coverage report (meetings/races/rows by season)
@@ -111,6 +112,23 @@ calibration layer (temperature/isotonic/Platt) is for.
 > Heavy jobs: run them via the venv directly (`.venv/Scripts/hkjc.exe`) — `uv run` re-syncs
 > the env on each call and can deadlock on the editable-`hkjc.exe` lock against a running job.
 
+## NLP track (M4)
+
+Scrape English race text and fold it in as a **lagged** feature group (a comment describes a
+run, so it is only a feature for the horse's *later* races — PLAN §1C), then ablate it.
+
+```bash
+uv run hkjc scrape-text       # corunning comments + stewards/vet/exceptional report blobs (#9)
+uv run hkjc features nlp      # encode comments -> lexicon flags + MiniLM anchor-similarities
+uv run hkjc features build    # rebuild as v2 (joins + lags the nlp_text group)
+uv run hkjc ablate            # walk-forward logit with vs without the NLP group (marginal effect)
+```
+
+Signals = spaCy rules/lexicon (interpretable trouble/ran-on/easing/… counts) + MiniLM sentence
+embeddings reduced to a few interpretable anchor-similarity scores. The group is **ablatable**
+and kept out of the baseline. With a full text backfill the ablation quantifies NLP's marginal
+ROI/log-loss; on a small pilot it is ~0 (low lagged coverage), as expected.
+
 ## Configuration
 
 YAML under [`config/`](config/), loaded and validated via `pydantic-settings`
@@ -124,10 +142,10 @@ config/            # YAML: paths, sources, features, risk, backtest, models
 src/hkjc/
   common/          # config, logging, keys, time (HKT)
   data/            # scrape · parse · store (DuckDB+Parquet) · weather · holidays · live(M7)
-  features/        # as-of feature store + leakage canary + design matrix (M2/M3); nlp/ is M4
+  features/        # as-of feature store · canary · design matrix (M2/M3) · nlp/ lagged text (M4)
   models/          # ProbabilityModel · logit · place (M2) · gbm · nn · ensemble · calibrate · blend (M3)
   backtest/        # walk-forward engine · pari-mutuel sim · metrics · bootstrap · dataset (M2/M3)
-  experiments/     # leaderboard · MLflow tracking · Optuna tuning (M3)
+  experiments/     # leaderboard · MLflow tracking · Optuna tuning · NLP ablation (M3/M4)
   risk/ api/       # M5 / M6 (skeletons)
   cli.py           # Typer entry point (`hkjc`)
 tests/             # pytest suite

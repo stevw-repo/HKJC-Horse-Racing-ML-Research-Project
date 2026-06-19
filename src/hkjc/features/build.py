@@ -26,7 +26,7 @@ import polars as pl
 from hkjc.common.config import AppConfig, get_config
 from hkjc.data.store.writer import season_label
 from hkjc.features import store
-from hkjc.features.base import FEATURE_SPECS
+from hkjc.features.base import FEATURE_SPECS, NLP_FEATURES
 
 # Lengths-behind-winner word tokens -> approximate lengths.
 _LBW_WORDS: dict[str, float] = {
@@ -404,6 +404,26 @@ def _add_context(runs: pl.DataFrame, cfg: AppConfig) -> pl.DataFrame:
     return runs.with_columns(canary_random=(key.hash(seed=1234) % 1_000_000) / 1_000_000.0)
 
 
+def _add_nlp(runs: pl.DataFrame, cfg: AppConfig) -> pl.DataFrame:
+    """Join the per-run comment NLP features and **lag** them (prior run only, PLAN.md §1C).
+
+    A comment describes the run it belongs to, so each NLP signal is shifted one run forward
+    per horse -- the value seen for a target race is the horse's *previous* comment.
+    """
+    from hkjc.features.nlp.build import build_comment_features, comment_features_path
+
+    keys = ["race_date", "venue", "race_no", "horse_id"]
+    path = comment_features_path(cfg)
+    cf = pl.read_parquet(path) if path.is_file() else build_comment_features(cfg, persist=True)
+    if cf.is_empty():
+        return runs.with_columns(*[pl.lit(None, dtype=pl.Float64).alias(c) for c in NLP_FEATURES])
+    cf = cf.select([*keys, *NLP_FEATURES]).unique(subset=keys, keep="first")
+    runs = runs.join(cf, on=keys, how="left")
+    return runs.sort(["horse_id", "race_date", "race_no"]).with_columns(
+        *[pl.col(c).shift(1).over("horse_id").alias(c) for c in NLP_FEATURES]
+    )
+
+
 def build_features(cfg: AppConfig | None = None, *, persist: bool = True) -> pl.DataFrame:
     """Build the as-of ``features_runner`` table and (optionally) persist it.
 
@@ -423,6 +443,7 @@ def build_features(cfg: AppConfig | None = None, *, persist: bool = True) -> pl.
     runs = _add_rating(runs, cfg)
     runs = _add_bio(runs, cfg)
     runs = _add_context(runs, cfg)
+    runs = _add_nlp(runs, cfg)
 
     wanted = [spec.name for spec in FEATURE_SPECS]
     for name in wanted:

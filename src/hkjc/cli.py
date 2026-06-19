@@ -220,6 +220,24 @@ def scrape_sectionals(
     typer.echo(f"Sectionals: {summary['meetings']} meetings, {summary['sectional_rows']} rows.")
 
 
+@app.command(name="scrape-text")
+def scrape_text(
+    limit: Annotated[int | None, typer.Option(help="Only the newest N meetings.")] = None,
+    since: Annotated[str | None, typer.Option(help="Only meetings on/after YYYY-MM-DD.")] = None,
+    force: Annotated[bool, typer.Option(help="Re-fetch even if already stored.")] = False,
+) -> None:
+    """Scrape English race text (#9): comments-on-running + report blobs, idempotently (M4)."""
+    from hkjc.data import pipeline
+
+    summary = pipeline.scrape_text(
+        limit=limit, since=date.fromisoformat(since) if since else None, force=force
+    )
+    typer.echo(
+        f"Text: {summary['meetings']} meetings, {summary['comments']} comments, "
+        f"{summary['report_blobs']} report blobs."
+    )
+
+
 @app.command(name="scrape-holidays")
 def scrape_holidays() -> None:
     """Ingest the HK public-holiday calendar from gov.hk open data (M1)."""
@@ -248,6 +266,8 @@ def data_health() -> None:
     typer.echo(f"  trials       : {s['barrier_trials_rows']}")
     typer.echo(f"  trackwork    : {s['trackwork_rows']}")
     typer.echo(f"  sectionals   : {s['sectionals_rows']}")
+    typer.echo(f"  comments     : {s['comments_on_running_rows']}")
+    typer.echo(f"  race text    : {s['race_text_rows']}")
     typer.echo(f"  manifest urls: {s['manifest_urls']}")
     for season, n in sorted(s["seasons"].items()):
         typer.echo(f"    season {season}: {n} meetings")
@@ -269,6 +289,15 @@ def features_build() -> None:
         f"Features: {df.height} runner-rows x {df.width} cols -> features_runner "
         f"(version {df['feature_version'][0]})."
     )
+
+
+@features_app.command("nlp")
+def features_nlp() -> None:
+    """Encode stored comments-on-running into the cached per-run NLP feature table (M4)."""
+    from hkjc.features.nlp import build_comment_features
+
+    df = build_comment_features(persist=True)
+    typer.echo(f"NLP comment features: {df.height} rows x {df.width} cols.")
 
 
 @app.command()
@@ -354,6 +383,24 @@ def tune(
     typer.echo(f"Best {res.model}: log-loss {res.best_log_loss:.4f} over {res.n_trials} trials")
     for key, value in res.best_params.items():
         typer.echo(f"  {key}: {value}")
+
+
+@app.command()
+def ablate(
+    seasons: Annotated[
+        int | None, typer.Option(help="Only the most recent N test seasons (default: all).")
+    ] = None,
+    market_weight: Annotated[float | None, typer.Option(help="Market-blend weight.")] = None,
+    ev: Annotated[float | None, typer.Option(help="EV edge threshold for the blend.")] = None,
+    seed: Annotated[int, typer.Option(help="RNG seed.")] = 0,
+) -> None:
+    """Ablate the NLP feature group: walk-forward logit with vs without it (M4 exit criterion)."""
+    from hkjc.experiments.ablation import format_ablation, run_ablation
+
+    res = run_ablation(
+        market_weight=market_weight, ev_threshold=ev, max_test_seasons=seasons, seed=seed
+    )
+    typer.echo(format_ablation(res))
 
 
 @app.command()

@@ -240,3 +240,36 @@ class SectionalSplit(BaseModel):
     section_time_s: float | None  # time to run this section (sums to final_time_s)
     split_200m_s: float | None  # per-200m pace within the section
     final_time_s: float | None  # the runner's overall finishing time
+
+
+class CommentOnRunning(BaseModel):
+    """One runner's stewards' comment-on-running (source #9, ``corunning``).
+
+    Post-race text: it describes the run that just happened, so it is **lagged** -- a valid
+    feature only for the horse's *later* races (``race_date`` is the text_event_time;
+    PLAN.md §1C). The free-text ``comment`` is the NLP signal.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    saddle: int | None
+    horse_id: str | None
+    placing: int | None
+    jockey: str | None
+    gear: str | None
+    comment: str
+
+
+class RaceText(BaseModel):
+    """A meeting/race-level English text blob (stewards' report / vet / exceptional factors).
+
+    Stored verbatim for the NLP corpus; ``source`` is the page it came from. Lagged like all
+    race text (the meeting date is the text_event_time).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: str  # racereportfull | veterinaryrecord | exceptionalfactors
+    race_no: int | None  # None for meeting-level reports
+    horse_id: str | None
+    text: str

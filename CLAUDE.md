@@ -69,8 +69,8 @@ data/              gitignored data lake: raw/ processed/ cache/ live_odds/ mlrun
 
 Note: `models/base.py` (the `ProbabilityModel` interface emitting a per-runner
 **Plackett–Luce strength vector**), `models/logit/`, `models/place/` (M2) plus `models/gbm/`,
-`models/nn/`, `models/ensemble/`, `models/calibrate/`, `models/blend/` and `experiments/`
-(M3) all exist. `features/nlp/` is M4. `risk/` is M5; `api/` is M6.
+`models/nn/`, `models/ensemble/`, `models/calibrate/`, `models/blend/`, `experiments/`
+(M3) and `features/nlp/` (M4) all exist. `risk/` is M5; `api/` is M6.
 
 ## Configuration
 
@@ -133,7 +133,8 @@ CLI: `hkjc scrape --date YYYY-MM-DD [--force]`, `hkjc backfill [--limit N] [--si
 `hkjc scrape-horses [--limit N]`, `hkjc scrape-people [--limit N]`,
 `hkjc scrape-weather [--since-year Y]`, `hkjc scrape-holidays`,
 `hkjc scrape-trials [--limit N]`, `hkjc scrape-trackwork [--limit N]`,
-`hkjc scrape-sectionals [--limit N]` (#7), `hkjc data-health`.
+`hkjc scrape-sectionals [--limit N]` (#7), `hkjc scrape-text [--limit N]` (#9), `hkjc
+data-health`.
 **Public holidays** (#14) are ingested from gov.hk open data (`data/holidays.py` →
 `public_holidays` view); the feed is served with a BOM and spans only ~current +/- 1 year.
 **Barrier trials** (#4, `parse/trials.py` → `barrier_trials` view): per-batch runs from
@@ -172,16 +173,18 @@ trackwork #5, sectional archive #7, racing news #9 (M4 NLP), pedigree #11, holid
 
 ## Milestone status
 
-M0, **M1 (scraper + storage), M2 (features + baseline + honest backtest), and M3 (model zoo +
-calibration + blend) are implementation-complete.** M1: every locked source has a parser +
-DuckDB view + offline fixture test, idempotency is proven, enumeration reaches ~2006, and the
-full backfill is **stored** (1,697 meetings, 2006-09 -> 2026-06; `hkjc data-health` reports
-coverage). M2: the as-of feature store + leakage canary, the PL-strength conditional-logit
-baseline + Harville PLACE, and an honest walk-forward backtest. M3: a GPU model zoo (GBMs +
-LambdaMART + tabular NNs + ensemble) behind one `ProbabilityModel`, calibration + market-blend,
-MLflow(sqlite)+Optuna, and a reproducible leaderboard. All green under ruff/mypy/pytest. Each
-milestone's exit criterion is in PLAN.md §2 — treat it as the definition of done. Forward
-race-card capture is parked with M7.
+M0, **M1 (scraper + storage), M2 (features + baseline + honest backtest), M3 (model zoo +
+calibration + blend), and M4 (English NLP track) are implementation-complete.** M1: every
+locked source has a parser + DuckDB view + offline fixture test, idempotency is proven,
+enumeration reaches ~2006, and the full backfill is **stored** (1,697 meetings, 2006-09 ->
+2026-06; `hkjc data-health` reports coverage). M2: the as-of feature store + leakage canary,
+the PL-strength conditional-logit baseline + Harville PLACE, and an honest walk-forward
+backtest. M3: a GPU model zoo (GBMs + LambdaMART + tabular NNs + ensemble) behind one
+`ProbabilityModel`, calibration + market-blend, MLflow(sqlite)+Optuna, and a reproducible
+leaderboard. M4: comments-on-running + report text capture, spaCy-rules/lexicon + MiniLM
+embedding signals, a **lagged** `nlp_text` feature group, and an ablation harness. All green
+under ruff/mypy/pytest. Each milestone's exit criterion is in PLAN.md §2 — treat it as the
+definition of done. Forward race-card capture is parked with M7.
 
 ## M2 (features + baseline + honest backtest) — implementation-complete
 
@@ -275,12 +278,44 @@ Pipeline: `experiments/leaderboard.py` runs every model through `experiments/run
   binary log-loss, so their raw-margin softmax is over-confident and *needs* the calibration
   layer / a grouped objective. Reproducible from MLflow (config + data hash).
 
-## Next: M4 (NLP track, English)
+## M4 (English NLP track) — implementation-complete
 
-Scrape/parse English stewards' reports + comments-on-running -> **lagged** structured signals
-(`text_event_time < race_off_time`) via spaCy rules + lexicon + sentence-transformer
-embeddings; an ablatable feature group measured by its marginal ROI/log-loss contribution
-(PLAN.md §2 M4). Good non-M4 adds still open: **backfill sectionals** (`hkjc scrape-sectionals`,
-then switch the M2 speed-figure proxy to real per-200m splits), GBM
-**calibration/grouped-objective** tuning, and Optuna sweeps at scale. Add
-spaCy/sentence-transformers via `uv add` at M4.
+Pipeline: `data/parse/text.py` (scrape) -> `features/nlp/` (encode) -> lagged `nlp_text`
+feature group in `features/build.py` -> `experiments/ablation.py`. CLI: `hkjc scrape-text`,
+`hkjc features nlp`, `hkjc ablate`.
+
+- **Text capture (#9):** the endpoints (PLAN's "TBC" paths, found by recon) are `corunning`
+  (Comments on Running -- a clean **per-runner** table: Placing/HorseNo/Horse/Jockey/Gear/
+  Comment, horse_id in the anchor) plus the prose reports `racereportfull` (stewards'
+  incidents), `veterinaryrecord`, `exceptionalfactors`. `corunning` -> structured
+  `comments_on_running` view; the reports -> `race_text` text blobs. `hkjc scrape-text
+  [--limit N] [--since ...]` (per-race corunning + per-meeting reports; idempotent, frozen;
+  URL date `YYYY/MM/DD`). Offline fixture test.
+- **Lagged discipline (PLAN §1C):** a comment describes the run it belongs to, so each NLP
+  signal is **shifted one run forward per horse** in `_add_nlp` -- the value seen for a target
+  race is the horse's *previous* comment (`text_event_time < race_off_time`). The leakage
+  canary still rides through.
+- **NLP signals (`features/nlp/`):** spaCy **blank-pipeline `PhraseMatcher`** over a curated
+  `lexicon.py` -> interpretable counts (trouble / slow_start / ran_on / easing / weakened /
+  wide / health); **MiniLM** (`all-MiniLM-L6-v2`, GPU/CPU) sentence embeddings reduced to a few
+  **anchor similarities** (closeness to "troubled run" / "won easing" / "no excuse") so the
+  384-dim vector becomes ablatable features. Cached to `processed/nlp_comment_features`
+  (`build_comment_features`; the embedding pass is the cost). No spaCy model download needed
+  (blank pipeline); MiniLM auto-downloads (~80MB) on first use.
+- **Ablatable group:** `NLP_FEATURES` is kept out of `BASELINE_FEATURES`; `numeric_design_
+  features(include_nlp)` + `load_model_data(include_nlp=...)` toggle it. `feature_version` ->
+  **v2**.
+- **Ablation (exit criterion):** `hkjc ablate` walk-forwards the logit with vs without the
+  group and reports the delta. **Current result: ~0** (delta 0.0000 over recent seasons) --
+  but only because the **text is a 39-meeting pilot** (~1% lagged coverage). The pipeline is
+  complete + leakage-safe; the **definitive ablation needs the full text backfill** (`hkjc
+  scrape-text`, multi-hour, then `features nlp` + `features build` + `ablate`).
+
+## Next: M5 (risk / staking sweeps)
+
+flat / fixed-fraction / full + fractional Kelly grid {0.05..0.5}, correlated/simultaneous
+Kelly within & across races; per-race 10% / per-day 25% caps; legal HK$10 rounding;
+multi-bankroll (1k/10k/50k/100k) sims; EV edge >=5% net takeout (PLAN.md §2 M5, config in
+`config/risk.yaml`). Build in `risk/`; reuse the `backtest/` pari-mutuel sim. Still-open data
+adds: **backfill sectionals + text** (then switch the speed-figure proxy to real splits and
+get a real NLP ablation), GBM calibration/grouped-objective tuning.
