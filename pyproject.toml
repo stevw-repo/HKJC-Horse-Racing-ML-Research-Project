@@ -30,7 +30,7 @@ dependencies = [
     "scipy>=1.17.1",
     "scikit-learn>=1.9.0",
     "matplotlib>=3.11.0",
-    "torch>=2.6.0",
+    "torch>=2.6.0,<2.7",   # keep the same minor across cu124 (win) + cpu (CI) wheels
     "lightgbm>=4.6.0",
     "xgboost>=3.2.0",
     "catboost>=1.2.10",
@@ -59,16 +59,25 @@ build-backend = "hatchling.build"
 packages = ["src/hkjc"]
 
 # --------------------------------------------------------------------------- #
-# uv: pull torch from the CUDA 12.4 wheel index (RTX 4060 / Ada, sm_89).
-# CI runs CPU-only; models must therefore also work without a GPU (device fallback).
+# uv: torch wheels by platform. CUDA 12.4 locally (Windows / RTX 4060, sm_89); the CPU
+# wheel everywhere else (Linux/macOS CI) so `uv sync --frozen` on CI does not pull the
+# ~2.4 GB CUDA wheel. Models fall back to CPU via models.device.gpu_available().
 # --------------------------------------------------------------------------- #
 [[tool.uv.index]]
 name = "pytorch-cu124"
 url = "https://download.pytorch.org/whl/cu124"
 explicit = true
 
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [tool.uv.sources]
-torch = [{ index = "pytorch-cu124" }]
+torch = [
+    { index = "pytorch-cu124", marker = "sys_platform == 'win32'" },
+    { index = "pytorch-cpu", marker = "sys_platform != 'win32'" },
+]
 
 # --------------------------------------------------------------------------- #
 # Ruff (lint + format)
