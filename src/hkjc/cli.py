@@ -214,8 +214,14 @@ def scrape_sectionals(
     """Scrape per-race sectional times (#7) for stored meetings, idempotently (M3)."""
     from hkjc.data import pipeline
 
+    def _progress(day: date, venue: str, rows: int) -> None:
+        typer.echo(f"  {day} {venue}: {rows} sectional rows")
+
     summary = pipeline.scrape_sectionals(
-        limit=limit, since=date.fromisoformat(since) if since else None, force=force
+        limit=limit,
+        since=date.fromisoformat(since) if since else None,
+        force=force,
+        on_meeting=_progress,
     )
     typer.echo(f"Sectionals: {summary['meetings']} meetings, {summary['sectional_rows']} rows.")
 
@@ -229,8 +235,14 @@ def scrape_text(
     """Scrape English race text (#9): comments-on-running + report blobs, idempotently (M4)."""
     from hkjc.data import pipeline
 
+    def _progress(day: date, venue: str, comments: int, blobs: int) -> None:
+        typer.echo(f"  {day} {venue}: {comments} comments, {blobs} report blobs")
+
     summary = pipeline.scrape_text(
-        limit=limit, since=date.fromisoformat(since) if since else None, force=force
+        limit=limit,
+        since=date.fromisoformat(since) if since else None,
+        force=force,
+        on_meeting=_progress,
     )
     typer.echo(
         f"Text: {summary['meetings']} meetings, {summary['comments']} comments, "
