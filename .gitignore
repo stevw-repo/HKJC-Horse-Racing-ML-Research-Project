@@ -231,3 +231,12 @@ config/local.yaml
 
 # uv.lock IS committed (reproducibility) — do not ignore it.
 
+# Frontend (M6): node deps + build output (ui/ source IS committed).
+ui/node_modules/
+ui/dist/
+# Re-include the frontend source lib/ (the generic Python `lib/` rule above would hide it).
+!ui/src/lib/
+
+# Claude preview launcher (machine-specific absolute paths; local tooling only).
+.claude/launch.json
+

@@ -265,7 +265,7 @@ def run_backtest(
 
     wf = walk_forward_oos(cfg, l2=l2, min_train_seasons=min_train_seasons)
     ocode, ong = group_codes(wf.arrays.race_id[wf.oos])
-    return _evaluate(
+    result = _evaluate(
         wf.arrays,
         wf.oos,
         wf.win_prob,
@@ -280,6 +280,17 @@ def run_backtest(
         make_plot=make_plot,
         cfg=cfg,
     )
+    _persist_result_json(cfg, result, wf)
+    return result
+
+
+def _persist_result_json(cfg: AppConfig, result: BacktestResult, wf: WalkForwardOOS) -> None:
+    """Write the result (+ calibration curve) to processed/backtest/result.json for the API."""
+    from hkjc.backtest.serialize import calibration_to_list, result_to_dict, write_json
+
+    bins = metrics.calibration_bins(wf.win_prob, wf.arrays.y[wf.oos], n_bins=12)
+    obj = result_to_dict(result, calibration_to_list(bins))
+    write_json(cfg.paths.processed_dir / "backtest" / "result.json", obj)
 
 
 def _evaluate(

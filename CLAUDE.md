@@ -174,8 +174,8 @@ trackwork #5, sectional archive #7, racing news #9 (M4 NLP), pedigree #11, holid
 ## Milestone status
 
 M0, **M1 (scraper + storage), M2 (features + baseline + honest backtest), M3 (model zoo +
-calibration + blend), M4 (English NLP track), and M5 (risk / staking sweeps) are
-implementation-complete.** M1: every locked source has a parser + DuckDB view + offline
+calibration + blend), M4 (English NLP track), M5 (risk / staking sweeps), and M6 (UI: React +
+FastAPI) are implementation-complete.** M1: every locked source has a parser + DuckDB view + offline
 fixture test, idempotency is proven, enumeration reaches ~2006, and the full backfill is
 **stored** (1,697 meetings, 2006-09 -> 2026-06; `hkjc data-health` reports coverage). M2: the
 as-of feature store + leakage canary, the PL-strength conditional-logit baseline + Harville
@@ -184,9 +184,12 @@ NNs + ensemble) behind one `ProbabilityModel`, calibration + market-blend, MLflo
 and a reproducible leaderboard. M4: comments-on-running + report text capture, spaCy-rules/lexicon
 + MiniLM embedding signals, a **lagged** `nlp_text` feature group, and an ablation harness. M5:
 Kelly variants (incl. exact correlated/simultaneous Kelly), exposure caps + legal rounding, a
-configurable losing-turnover rebate, and a multi-bankroll staking sweep + comparison report.
-All green under ruff/mypy/pytest. Each milestone's exit criterion is in PLAN.md §2 — treat it as
-the definition of done. Forward race-card capture is parked with M7.
+configurable losing-turnover rebate, and a multi-bankroll staking sweep + comparison report. M6:
+a read-only FastAPI backend (serves the DuckDB views + persisted snapshots) + a React/Vite/TS
+dashboard suite (data-health, backtest-explorer, experiment-compare, race-day) on the full PLAN
+stack. All green under ruff/mypy/pytest (Python) + tsc/vite build (frontend). Each milestone's
+exit criterion is in PLAN.md §2 — treat it as the definition of done. Forward race-card capture
+is parked with M7.
 
 ## M2 (features + baseline + honest backtest) — implementation-complete
 
@@ -242,7 +245,10 @@ Pipeline: `features/build.py` -> `features_runner` (processed Parquet + DuckDB v
   partitions; `hkjc scrape-sectionals [--limit N] [--since ...]` (idempotent, frozen-skip;
   URL date is `DD/MM/YYYY`, no `Racecourse` param). Offline fixture test. **Backfill pending**
   (user runs `hkjc scrape-sectionals` like the M1 backfill); once stored, the M2 speed-figure
-  proxy can switch to real splits (a clean feature-store add).
+  proxy can switch to real splits (a clean feature-store add). **Archive starts 2008-04-02:**
+  HKJC's `displaysectionaltime` returns an empty page for every meeting from 2006-09 to
+  2008-03 (verified) -> those parse to 0 rows (expected, not a bug, and the scraper goes
+  oldest-first), so backfill with `--since 2008-04-02` to skip ~1.5 empty seasons.
 
 ## M3 (model zoo + calibration + blend) — implementation-complete
 
@@ -372,9 +378,43 @@ Artifacts: `data/processed/risk/staking_sweep.{csv,parquet}` + `staking_roi.png`
 table prints with `tbl_formatting="ASCII_FULL"` (the Windows cp1252 console cannot encode polars'
 Unicode box-drawing), and `write_report` runs **before** the print so artifacts persist regardless.
 
-## Next: M6 (UI: React + FastAPI)
+## M6 (UI: React + FastAPI) — implementation-complete
 
-FastAPI exposing data/predictions/value-staking/backtest; React+Vite+TS dashboards (race-day,
-experiment-compare, backtest-explorer, data/scraper-health) (PLAN.md §2 M6). Still-open data adds:
-**backfill sectionals + text** (then switch the speed-figure proxy to real splits), GBM
-calibration/grouped-objective tuning.
+A local, **read-only** FastAPI backend + a React/Vite/TS dashboard suite. CLI: `hkjc serve`
+(uvicorn) + `cd ui && npm run dev` (vite :5173, proxies `/api` -> :8000). The UI **recommends
+only -- there is no bet/write endpoint** (the hard invariant carries into the API + UI).
+
+- **Backend** (`src/hkjc/api/`): `app.py` `create_app()` + CORS; `service.py` reads the DuckDB
+  views **live** (health/races) + persisted `processed/` snapshots (backtest/leaderboard/staking);
+  `schemas.py` Pydantic v2 responses; `routes.py` 7 GET endpoints under `/api` (ping, health,
+  backtest, leaderboard, staking, races, raceday). `run_backtest`/`run_leaderboard` now persist
+  JSON snapshots (`backtest/serialize.py`) so the API serves real M2/M3 output **without
+  recompute**; the M5 staking parquet is read directly. `Api` config + `config/api.yaml`. 8
+  TestClient tests -- **CI-safe**: on a fresh checkout with no `data/`, endpoints degrade to
+  empty/zeros/404, so the tests assert the contract, not generated data.
+- **Frontend** (`ui/`, committed; `node_modules`/`dist` gitignored): Vite + React 18 + TS +
+  Tailwind + shadcn-style primitives (card/badge/button/table, hand-rolled to skip the
+  interactive `shadcn init`) + TanStack Query + Recharts. Four dashboards: **data-health**
+  (coverage stats + meetings/season bar + source table + recent races), **backtest-explorer**
+  (policy ROI table + WIN calibration curve + the M5 sweep with a bankroll selector),
+  **experiment-compare** (leaderboard table + model-WIN-ROI bars vs the takeout line),
+  **race-day** (mocked card with value/stake recs, flagged **MOCK** until M7). `vite build`
+  (tsc --noEmit + bundle) is green; verified rendering live against the API (all four dashboards
+  show real M2-M5 data).
+
+**Gotchas (hard-won):** **Node is not a Python dep** -- install LTS once (winget/nodejs.org);
+fresh shells won't see it on PATH until they restart (prepend `C:\Program Files\nodejs` or use
+full paths for one-off runs). The **Python CI stays Python-only**; the frontend is checked
+locally via `npm run build`. Recharts' `Tooltip` `formatter` value is `number|string|array`, so
+type the param inferred + coerce with `Number()` (a `(v:number)=>` annotation fails tsc). The
+shadcn `@apply border-border` (and the theme) needs Tailwind's config found, so run vite with
+**cwd = `ui/`** (the preview launcher's repo-root cwd breaks PostCSS config resolution).
+
+## Next: M7 (live ops + odds logging)
+
+GraphQL live-odds snapshot logger (B1/B2/B3) keyed on `lastUpdateTime`; race-day pipeline
+(scrape card -> predict -> blend -> value vs live odds -> stake rec at a fixed cutoff); Windows
+Task Scheduler automation; **no bet is ever placed** (PLAN.md §2 M7). This also lights up the
+**forward race-card capture** parked since M1 and turns the race-day dashboard real. Still-open
+data adds: **backfill sectionals + text** (then switch the speed-figure proxy to real splits),
+GBM calibration/grouped-objective tuning.

@@ -208,10 +208,18 @@ def scrape_trackwork(
 @app.command(name="scrape-sectionals")
 def scrape_sectionals(
     limit: Annotated[int | None, typer.Option(help="Only the newest N meetings.")] = None,
-    since: Annotated[str | None, typer.Option(help="Only meetings on/after YYYY-MM-DD.")] = None,
+    since: Annotated[
+        str | None,
+        typer.Option(help="Only meetings on/after YYYY-MM-DD (archive starts 2008-04-02)."),
+    ] = None,
     force: Annotated[bool, typer.Option(help="Re-fetch even if already stored.")] = False,
 ) -> None:
-    """Scrape per-race sectional times (#7) for stored meetings, idempotently (M3)."""
+    """Scrape per-race sectional times (#7) for stored meetings, idempotently (M3).
+
+    HKJC's sectional archive begins 2008-04-02; meetings from 2006-09 to 2008-03 have none
+    (they return 0 rows -- expected, not an error). Use --since 2008-04-02 to skip that empty
+    early era on the first backfill.
+    """
     from hkjc.data import pipeline
 
     def _progress(day: date, venue: str, rows: int) -> None:
@@ -442,6 +450,23 @@ def risk_sweep(
     paths = write_report(res, cfg)  # persist before printing (console encoding is fragile)
     typer.echo(format_sweep(res))
     typer.echo(f"\nWrote: {paths['csv']}\n       {paths['parquet']}\n       {paths['png']}")
+
+
+@app.command()
+def serve(
+    host: Annotated[str | None, typer.Option(help="Bind host (default from config).")] = None,
+    port: Annotated[int | None, typer.Option(help="Bind port (default from config).")] = None,
+    reload: Annotated[bool, typer.Option("--reload", help="Auto-reload on changes (dev).")] = False,
+) -> None:
+    """Run the FastAPI server backing the dashboards (M6)."""
+    import uvicorn
+
+    from hkjc.common.config import get_config
+
+    cfg = get_config()
+    uvicorn.run(
+        "hkjc.api.app:app", host=host or cfg.api.host, port=port or cfg.api.port, reload=reload
+    )
 
 
 @app.command()

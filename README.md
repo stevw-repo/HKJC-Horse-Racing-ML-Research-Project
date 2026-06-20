@@ -21,8 +21,8 @@ conventions and current state of this repo.
 | **M3** | Model zoo (GBMs + LambdaMART + tabular NNs) + calibration + market blend | ✅ done |
 | **M4** | NLP track (English): comments-on-running -> lagged signals + ablation | ✅ done |
 | **M5** | Risk / staking sweeps (Kelly variants, caps, rounding, multi-bankroll) | ✅ done |
-| M6 | UI (React + FastAPI) | ◻ next |
-| M7 | Live ops + odds logging | — |
+| **M6** | UI: read-only FastAPI + React/Vite/TS dashboards | ✅ done |
+| M7 | Live ops + odds logging | ◻ next |
 
 ## Quickstart
 
@@ -152,6 +152,28 @@ HK$100k). Pari-mutuel pool dilution is negligible (a HK$10k cap is <0.2% of HKJC
 not modelled; HKJC's real rebate schedule is parameterised, not fabricated. Outputs land in
 `data/processed/risk/`.
 
+## Dashboards (M6)
+
+A local, **read-only** FastAPI backend + a React/Vite/TS dashboard suite — it surfaces
+recommendations and **never places a bet** (there is no write/bet endpoint).
+
+```bash
+uv run hkjc serve              # FastAPI backend on http://127.0.0.1:8000 (/api/*)
+
+# In a second terminal (needs Node.js LTS — not a Python dep; install once):
+cd ui && npm install           # first run only
+npm run dev                    # Vite dev server on http://localhost:5173 (proxies /api -> :8000)
+```
+
+Four dashboards, all on real M2–M5 output (race-day on a mocked card, flagged **MOCK** until
+the M7 live logger lands): **Data Health** (coverage + meetings/season + recent races),
+**Backtest Explorer** (policy ROIs + WIN calibration curve + the M5 staking sweep),
+**Experiment Compare** (the model-zoo leaderboard + ROI-vs-takeout bars), and **Race Day**
+(value/stake recommendations). The backend reads the DuckDB views live and the persisted
+`processed/` snapshots (`run_backtest`/`run_leaderboard`/`run_sweep` write them) — no training
+happens in a request. The frontend (`ui/`) builds with `npm run build` (`tsc` + `vite`); the
+Python CI stays Python-only.
+
 ## Configuration
 
 YAML under [`config/`](config/), loaded and validated via `pydantic-settings`
@@ -170,8 +192,9 @@ src/hkjc/
   backtest/        # walk-forward engine · pari-mutuel sim · metrics · bootstrap · dataset (M2/M3)
   experiments/     # leaderboard · MLflow tracking · Optuna tuning · NLP ablation (M3/M4)
   risk/            # kelly · staking · rebate · simulate · sweep · report (M5)
-  api/             # M6 (skeleton)
+  api/             # FastAPI: app · routes · schemas · service (M6, read-only)
   cli.py           # Typer entry point (`hkjc`)
+ui/                # React + Vite + TS dashboards (M6; node_modules/dist gitignored)
 tests/             # pytest suite
 fixtures/          # checked-in HTML/JSON for offline parser tests
 data/              # gitignored data lake: raw/ processed/ cache/ live_odds/ mlruns/

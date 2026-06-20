@@ -329,6 +329,18 @@ class _YamlDirSource(PydanticBaseSettingsSource):
         return self._data
 
 
+class Api(BaseModel):
+    """FastAPI server settings (M6). The UI dev server proxies /api to host:port."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    host: str = "127.0.0.1"
+    port: int = 8000
+    cors_origins: list[str] = Field(
+        default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
+    )
+
+
 class AppConfig(BaseSettings):
     """Top-level application configuration, assembled from YAML + env overrides."""
 
@@ -345,6 +357,7 @@ class AppConfig(BaseSettings):
     risk: Risk = Field(default_factory=Risk)
     backtest: Backtest = Field(default_factory=Backtest)
     models: Models = Field(default_factory=Models)
+    api: Api = Field(default_factory=Api)
 
     @classmethod
     def settings_customise_sources(

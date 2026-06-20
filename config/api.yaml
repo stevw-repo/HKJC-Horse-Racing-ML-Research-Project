@@ -1,0 +1,8 @@
+# FastAPI server settings (M6). The UI dev server (vite, :5173) proxies /api to here,
+# so CORS only matters if the front end is served from a different origin in dev.
+api:
+  host: 127.0.0.1
+  port: 8000
+  cors_origins:
+    - http://localhost:5173
+    - http://127.0.0.1:5173

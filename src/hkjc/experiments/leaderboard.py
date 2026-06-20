@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
+from typing import Any
 
 import structlog
 
@@ -101,7 +102,35 @@ def run_leaderboard(
         entries.append(LeaderboardEntry(name, result))
 
     entries.sort(key=lambda e: e.result.policies["model_win"].roi, reverse=True)
+    _persist_leaderboard_json(cfg, entries)
     return entries
+
+
+def _entry_row(entry: LeaderboardEntry) -> dict[str, Any]:
+    """One compact leaderboard row (the columns the experiment-compare dashboard shows)."""
+    r = entry.result
+    pol = r.policies
+    return {
+        "name": entry.name,
+        "n_oos_races": r.n_oos_races,
+        "win_log_loss": r.win_log_loss,
+        "brier": r.brier,
+        "top1_hit_rate": r.top1_hit_rate,
+        "ece": r.ece,
+        "model_win_roi": pol["model_win"].roi if "model_win" in pol else None,
+        "model_place_roi": pol["model_place"].roi if "model_place" in pol else None,
+        "blend_win_roi": pol["blend_win"].roi if "blend_win" in pol else None,
+    }
+
+
+def _persist_leaderboard_json(cfg: AppConfig, entries: list[LeaderboardEntry]) -> None:
+    """Write the ranked entries to processed/experiments/leaderboard.json for the API."""
+    from hkjc.backtest.serialize import write_json
+
+    write_json(
+        cfg.paths.processed_dir / "experiments" / "leaderboard.json",
+        [_entry_row(e) for e in entries],
+    )
 
 
 def _min_train_for(data: ModelData, max_test_seasons: int | None) -> int:
