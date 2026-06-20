@@ -196,6 +196,7 @@ class Risk(BaseModel):
     ev_threshold: float = 0.05
     staking_methods: list[str] = Field(default_factory=list)
     kelly_fractions: list[float] = Field(default_factory=list)
+    fixed_fraction: float = 0.02  # bankroll fraction per bet for the fixed-fraction method
     per_race_cap: float = 0.10
     per_day_cap: float = 0.25
     correlated_kelly: bool = True

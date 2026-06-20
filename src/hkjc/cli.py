@@ -286,6 +286,11 @@ features_app = typer.Typer(
 )
 app.add_typer(features_app)
 
+risk_app = typer.Typer(
+    name="risk", help="Risk / staking sweeps (M5).", no_args_is_help=True, add_completion=False
+)
+app.add_typer(risk_app)
+
 
 @features_app.command("build")
 def features_build() -> None:
@@ -409,6 +414,34 @@ def ablate(
         market_weight=market_weight, ev_threshold=ev, max_test_seasons=seasons, seed=seed
     )
     typer.echo(format_ablation(res))
+
+
+@risk_app.command("sweep")
+def risk_sweep(
+    bankrolls: Annotated[
+        str | None, typer.Option(help="Comma-separated bankrolls (default from config).")
+    ] = None,
+    pools: Annotated[
+        str, typer.Option(help="Pools to stake: win, place, or win,place.")
+    ] = "win,place",
+    rebate_rate: Annotated[
+        float, typer.Option(help="Rebate rate on losing turnover above HK$10k (default 0).")
+    ] = 0.0,
+    l2: Annotated[float, typer.Option(help="Ridge penalty for the conditional logit.")] = 1.0,
+    seed: Annotated[int, typer.Option(help="RNG seed.")] = 0,
+) -> None:
+    """Sweep staking methods x bankrolls and write the comparison report (M5)."""
+    from hkjc.common.config import get_config
+    from hkjc.risk.report import format_sweep, write_report
+    from hkjc.risk.sweep import run_sweep
+
+    cfg = get_config()
+    bk = [float(x) for x in bankrolls.split(",")] if bankrolls else None
+    pool_t = tuple(p.strip() for p in pools.split(",") if p.strip())
+    res = run_sweep(cfg, bankrolls=bk, pools=pool_t, rebate_rate=rebate_rate, l2=l2, seed=seed)
+    paths = write_report(res, cfg)  # persist before printing (console encoding is fragile)
+    typer.echo(format_sweep(res))
+    typer.echo(f"\nWrote: {paths['csv']}\n       {paths['parquet']}\n       {paths['png']}")
 
 
 @app.command()

@@ -174,17 +174,19 @@ trackwork #5, sectional archive #7, racing news #9 (M4 NLP), pedigree #11, holid
 ## Milestone status
 
 M0, **M1 (scraper + storage), M2 (features + baseline + honest backtest), M3 (model zoo +
-calibration + blend), and M4 (English NLP track) are implementation-complete.** M1: every
-locked source has a parser + DuckDB view + offline fixture test, idempotency is proven,
-enumeration reaches ~2006, and the full backfill is **stored** (1,697 meetings, 2006-09 ->
-2026-06; `hkjc data-health` reports coverage). M2: the as-of feature store + leakage canary,
-the PL-strength conditional-logit baseline + Harville PLACE, and an honest walk-forward
-backtest. M3: a GPU model zoo (GBMs + LambdaMART + tabular NNs + ensemble) behind one
-`ProbabilityModel`, calibration + market-blend, MLflow(sqlite)+Optuna, and a reproducible
-leaderboard. M4: comments-on-running + report text capture, spaCy-rules/lexicon + MiniLM
-embedding signals, a **lagged** `nlp_text` feature group, and an ablation harness. All green
-under ruff/mypy/pytest. Each milestone's exit criterion is in PLAN.md §2 — treat it as the
-definition of done. Forward race-card capture is parked with M7.
+calibration + blend), M4 (English NLP track), and M5 (risk / staking sweeps) are
+implementation-complete.** M1: every locked source has a parser + DuckDB view + offline
+fixture test, idempotency is proven, enumeration reaches ~2006, and the full backfill is
+**stored** (1,697 meetings, 2006-09 -> 2026-06; `hkjc data-health` reports coverage). M2: the
+as-of feature store + leakage canary, the PL-strength conditional-logit baseline + Harville
+PLACE, and an honest walk-forward backtest. M3: a GPU model zoo (GBMs + LambdaMART + tabular
+NNs + ensemble) behind one `ProbabilityModel`, calibration + market-blend, MLflow(sqlite)+Optuna,
+and a reproducible leaderboard. M4: comments-on-running + report text capture, spaCy-rules/lexicon
++ MiniLM embedding signals, a **lagged** `nlp_text` feature group, and an ablation harness. M5:
+Kelly variants (incl. exact correlated/simultaneous Kelly), exposure caps + legal rounding, a
+configurable losing-turnover rebate, and a multi-bankroll staking sweep + comparison report.
+All green under ruff/mypy/pytest. Each milestone's exit criterion is in PLAN.md §2 — treat it as
+the definition of done. Forward race-card capture is parked with M7.
 
 ## M2 (features + baseline + honest backtest) — implementation-complete
 
@@ -318,11 +320,61 @@ feature group in `features/build.py` -> `experiments/ablation.py`. CLI: `hkjc sc
   (PLAN §1F holds across the NLP lever too). Rerun after any text/feature change: `hkjc features
   nlp` (re-embed) + `hkjc features build` + `hkjc ablate`.
 
-## Next: M5 (risk / staking sweeps)
+## M5 (risk / staking sweeps) — implementation-complete
 
-flat / fixed-fraction / full + fractional Kelly grid {0.05..0.5}, correlated/simultaneous
-Kelly within & across races; per-race 10% / per-day 25% caps; legal HK$10 rounding;
-multi-bankroll (1k/10k/50k/100k) sims; EV edge >=5% net takeout (PLAN.md §2 M5, config in
-`config/risk.yaml`). Build in `risk/`; reuse the `backtest/` pari-mutuel sim. Still-open data
-adds: **backfill sectionals + text** (then switch the speed-figure proxy to real splits and
-get a real NLP ablation), GBM calibration/grouped-objective tuning.
+Pipeline: `risk/sweep.py` reuses `backtest.engine.walk_forward_oos` (the OOS WIN/PLACE preds,
+extracted from `run_backtest` so the M2 path is unchanged) -> a day-ordered card -> per-policy
+`risk/simulate.py` over `risk/staking.py` (+`risk/kelly.py`, `risk/rebate.py`) ->
+`risk/report.py`. CLI: `hkjc risk sweep [--bankrolls ...] [--pools win,place] [--rebate-rate R]`.
+
+- **Kelly** (`risk/kelly.py`): single-bet `(p*b-1)/(b-1)`; naive per-bet; **exact within-race
+  simultaneous Kelly** -- closed form `f_i = p_i - R/b_i` with reserve `R` per bet-set, taking the
+  `E[log wealth]`-max over expected-value-sorted prefixes (cross-checked against scipy SLSQP).
+  **Subtle, load-bearing:** `R` can sit **below 1**, so a mildly -EV runner can be bet *as a hedge*
+  -- the bet set is **not** simply "the +EV runners". Correlated Kelly *deploys more* than naive
+  when several runners are +EV (the hedge), reducing to single Kelly for one candidate.
+- **Staking** (`risk/staking.py`): flat / fixed_fraction / kelly_full / kelly_fractional{0.05..0.5},
+  in naive and correlated variants; +EV gate (>=5% net takeout); per-race 10% + per-day 25% caps;
+  legal HK$10 rounding applied **last** (so the granularity loss is what reaches the pool). WIN is
+  sized correlated-or-naive; **PLACE is per-bet** (approx) against a **constructed** place line
+  (Harville on the market WIN probs x place takeout -- HKJC publishes no historical place-odds line).
+- **Simulator** (`risk/simulate.py`): day-ordered compounding off the **start-of-day** bankroll
+  (a day's races sized simultaneously); terminal wealth, max drawdown, **bootstrap risk-of-ruin**
+  (P(equity < 10% of start)), Sharpe, rounding loss, rebate. Wealth conservation is property-tested.
+  **Pool-impact dilution is not modelled** -- the store has no pool totals, and a HK$10k cap is
+  <0.2% of HKJC's HK$-million WIN pools, so dilution is negligible across all four bankrolls.
+- **Rebate** (`risk/rebate.py`): a *configurable* rate on losing turnover above the HK$10k
+  per-betline threshold (rate 0 = the real HK$1k case; HKJC's actual schedule is **not** fabricated).
+  The report surfaces the threshold-crossing **frequency** per bankroll.
+
+**Result (14 policies x 4 bankrolls, 15,083 OOS races, seasons 2007-08..2025-26, feature_version
+v2, market-blend value lens):**
+- **No staking method beats the takeout** (PLAN §1F holds across the entire grid). Best ROI is
+  **fractional Kelly λ≈0.05-0.10 at ~-15%**, vs full Kelly ~-17%, flat -22%..-27%, fixed-fraction
+  -27%..-30% -- but the bootstrap CIs are wide and overlap, so the differences are **not**
+  significant; fractional Kelly's gain is variance/selectivity, not edge.
+- **Granularity (headline):** at **HK$1,000 flat and fixed-fraction place ZERO bets** -- the HK$10
+  minimum + 25% day cap collapse every diversified value stake below HK$10 (rounds to 0). Even
+  Kelly loses **98%** of its intended stake to rounding at HK$1k, falling monotonically to
+  **75% / 37% / 23%** at HK$10k / 50k / 100k. Small-bankroll value betting is mechanically crippled.
+- **Rebate threshold (headline):** the HK$10k losing-turnover threshold is crossed on **0 days at
+  HK$1k-10k, 3-6 at HK$50k, 16-17 at HK$100k** -- and only for the larger-per-bet Kelly methods
+  (flat's tiny stakes never accumulate enough losing turnover on a betline). A rebate would only
+  ever matter at large bankroll; at the real HK$1k default (rate 0) it is inert.
+- **Drawdown / ruin:** on a negative edge over ~1,600 days essentially everything ruins (equity
+  <10% of start; ruin_prob 0.94-1.0 at HK$10k+). Full Kelly ruins fastest; fractional Kelly only
+  slows the bleed. At HK$1k Kelly is too throttled by rounding to ruin.
+- **Correlated vs naive Kelly:** ~identical (full Kelly -17.00% naive vs -17.33% corr at HK$10k) --
+  after the 5% EV gate a race rarely has >1 +EV WIN runner, so the hedge correction seldom fires.
+  An honest "marginal" outcome for the correlated machinery, exactly as the math predicts.
+
+Artifacts: `data/processed/risk/staking_sweep.{csv,parquet}` + `staking_roi.png`. The console
+table prints with `tbl_formatting="ASCII_FULL"` (the Windows cp1252 console cannot encode polars'
+Unicode box-drawing), and `write_report` runs **before** the print so artifacts persist regardless.
+
+## Next: M6 (UI: React + FastAPI)
+
+FastAPI exposing data/predictions/value-staking/backtest; React+Vite+TS dashboards (race-day,
+experiment-compare, backtest-explorer, data/scraper-health) (PLAN.md §2 M6). Still-open data adds:
+**backfill sectionals + text** (then switch the speed-figure proxy to real splits), GBM
+calibration/grouped-objective tuning.

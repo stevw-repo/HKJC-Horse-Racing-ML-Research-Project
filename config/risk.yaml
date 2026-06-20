@@ -10,6 +10,7 @@ risk:
 
   staking_methods: [flat, fixed_fraction, kelly_full, kelly_fractional]
   kelly_fractions: [0.05, 0.10, 0.15, 0.25, 0.50]
+  fixed_fraction: 0.02         # bankroll fraction per bet for the fixed-fraction method
   per_race_cap: 0.10           # 10% of bankroll per race
   per_day_cap: 0.25            # 25% of bankroll per day
   correlated_kelly: true       # simultaneous/correlated Kelly within & across races

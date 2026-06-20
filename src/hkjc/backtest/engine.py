@@ -86,6 +86,7 @@ class _Arrays:
     canary: FloatArray
     race_id: IntArray
     season: np.typing.NDArray[np.str_]
+    race_date: np.typing.NDArray[np.str_]  # 'YYYY-MM-DD' day key (per-day cap, M5 sweep)
 
 
 def _dividend_lookup(cfg: AppConfig, pool: str) -> pl.DataFrame:
@@ -145,6 +146,7 @@ def _load_arrays(cfg: AppConfig) -> _Arrays:
         canary=canary,
         race_id=df["race_id"].to_numpy().astype(np.int64),
         season=df["season"].to_numpy().astype(str),
+        race_date=df["race_date"].cast(pl.String).to_numpy().astype(str),
     )
 
 
@@ -195,22 +197,22 @@ def _summarise(
     )
 
 
-def run_backtest(
-    cfg: AppConfig | None = None,
-    *,
-    l2: float = 1.0,
-    market_weight: float | None = None,
-    ev_threshold: float | None = None,
-    flat_stake: float | None = None,
-    min_train_seasons: int = 1,
-    seed: int = 0,
-    make_plot: bool = True,
-) -> BacktestResult:
-    """Run the honest walk-forward backtest and return the result summary."""
+@dataclass(frozen=True, slots=True)
+class WalkForwardOOS:
+    """The walk-forward out-of-sample predictions, reused by the backtest and the M5 sweep."""
+
+    arrays: _Arrays
+    oos: IntArray  # indices into ``arrays`` for the OOS runners (season-ordered, concatenated)
+    win_prob: FloatArray  # model WIN probability per OOS runner
+    place_prob: FloatArray  # model PLACE probability (Harville) per OOS runner
+    model: ConditionalLogit  # the last-season fit (for the canary-coefficient check)
+
+
+def walk_forward_oos(
+    cfg: AppConfig | None = None, *, l2: float = 1.0, min_train_seasons: int = 1
+) -> WalkForwardOOS:
+    """Fit the PL-logit season-by-season (expanding window) and collect OOS WIN/PLACE probs."""
     cfg = cfg or get_config()
-    market_weight = cfg.models.market_blend_weight if market_weight is None else market_weight
-    ev_threshold = cfg.risk.ev_threshold if ev_threshold is None else ev_threshold
-    stake = cfg.risk.min_bet if flat_stake is None else flat_stake
     a = _load_arrays(cfg)
 
     oos_idx: list[IntArray] = []
@@ -235,19 +237,42 @@ def run_backtest(
         msg = "Not enough seasons to walk forward; scrape/backfill more data first."
         raise RuntimeError(msg)
 
-    oos = np.concatenate(oos_idx)
-    wp = np.concatenate(wp_parts)
-    pp = np.concatenate(pp_parts)
-    ocode, ong = group_codes(a.race_id[oos])
+    return WalkForwardOOS(
+        arrays=a,
+        oos=np.concatenate(oos_idx),
+        win_prob=np.concatenate(wp_parts),
+        place_prob=np.concatenate(pp_parts),
+        model=last_model,
+    )
 
-    result = _evaluate(
-        a,
-        oos,
-        wp,
-        pp,
+
+def run_backtest(
+    cfg: AppConfig | None = None,
+    *,
+    l2: float = 1.0,
+    market_weight: float | None = None,
+    ev_threshold: float | None = None,
+    flat_stake: float | None = None,
+    min_train_seasons: int = 1,
+    seed: int = 0,
+    make_plot: bool = True,
+) -> BacktestResult:
+    """Run the honest walk-forward backtest and return the result summary."""
+    cfg = cfg or get_config()
+    market_weight = cfg.models.market_blend_weight if market_weight is None else market_weight
+    ev_threshold = cfg.risk.ev_threshold if ev_threshold is None else ev_threshold
+    stake = cfg.risk.min_bet if flat_stake is None else flat_stake
+
+    wf = walk_forward_oos(cfg, l2=l2, min_train_seasons=min_train_seasons)
+    ocode, ong = group_codes(wf.arrays.race_id[wf.oos])
+    return _evaluate(
+        wf.arrays,
+        wf.oos,
+        wf.win_prob,
+        wf.place_prob,
         ocode,
         ong,
-        last_model,
+        wf.model,
         market_weight=market_weight,
         ev_threshold=ev_threshold,
         stake=stake,
@@ -255,7 +280,6 @@ def run_backtest(
         make_plot=make_plot,
         cfg=cfg,
     )
-    return result
 
 
 def _evaluate(

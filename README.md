@@ -20,8 +20,8 @@ conventions and current state of this repo.
 | **M2** | Features + baseline conditional-logit + honest backtest | ✅ done |
 | **M3** | Model zoo (GBMs + LambdaMART + tabular NNs) + calibration + market blend | ✅ done |
 | **M4** | NLP track (English): comments-on-running -> lagged signals + ablation | ✅ done |
-| M5 | Risk / staking sweeps | ◻ next |
-| M6 | UI (React + FastAPI) | — |
+| **M5** | Risk / staking sweeps (Kelly variants, caps, rounding, multi-bankroll) | ✅ done |
+| M6 | UI (React + FastAPI) | ◻ next |
 | M7 | Live ops + odds logging | — |
 
 ## Quickstart
@@ -129,6 +129,29 @@ embeddings reduced to a few interpretable anchor-similarity scores. The group is
 and kept out of the baseline. With a full text backfill the ablation quantifies NLP's marginal
 ROI/log-loss; on a small pilot it is ~0 (low lagged coverage), as expected.
 
+## Risk / staking sweeps (M5)
+
+Reuse the walk-forward OOS predictions and sweep **staking methods × bankrolls** to size value
+bets honestly: flat, fixed-fraction, full and fractional Kelly (incl. the exact within-race
+**correlated/simultaneous** Kelly), under per-race 10% / per-day 25% caps and legal HK$10
+rounding, at HK$1k/10k/50k/100k.
+
+```bash
+uv run hkjc risk sweep                       # full sweep -> comparison table + CSV/Parquet + ROI PNG
+uv run hkjc risk sweep --pools win           # WIN only (default win,place)
+uv run hkjc risk sweep --rebate-rate 0.1     # assume a 10% losing-turnover rebate above HK$10k
+```
+
+The honest takeaway holds here too: **no staking rule manufactures an edge** — every method
+loses ≈ the takeout (best is fractional Kelly λ≈0.05–0.10 at ~−15%; flat/fixed −22% to −30%),
+with wide, overlapping CIs. What staking *does* change is structural, and the sweep surfaces the
+two headline effects: the **HK$10 granularity** loss (at HK$1,000 flat/fixed can place *no*
+legal diversified bets; Kelly loses ~98% of intended stake to rounding, falling to ~23% at
+HK$100k) and the **HK$10k rebate threshold** (crossed on 0 days at HK$1k–10k, but 16–17 days at
+HK$100k). Pari-mutuel pool dilution is negligible (a HK$10k cap is <0.2% of HKJC's pools) and is
+not modelled; HKJC's real rebate schedule is parameterised, not fabricated. Outputs land in
+`data/processed/risk/`.
+
 ## Configuration
 
 YAML under [`config/`](config/), loaded and validated via `pydantic-settings`
@@ -146,7 +169,8 @@ src/hkjc/
   models/          # ProbabilityModel · logit · place (M2) · gbm · nn · ensemble · calibrate · blend (M3)
   backtest/        # walk-forward engine · pari-mutuel sim · metrics · bootstrap · dataset (M2/M3)
   experiments/     # leaderboard · MLflow tracking · Optuna tuning · NLP ablation (M3/M4)
-  risk/ api/       # M5 / M6 (skeletons)
+  risk/            # kelly · staking · rebate · simulate · sweep · report (M5)
+  api/             # M6 (skeleton)
   cli.py           # Typer entry point (`hkjc`)
 tests/             # pytest suite
 fixtures/          # checked-in HTML/JSON for offline parser tests
