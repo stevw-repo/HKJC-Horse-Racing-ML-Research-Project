@@ -311,11 +311,12 @@ feature group in `features/build.py` -> `experiments/ablation.py`. CLI: `hkjc sc
 - **Ablatable group:** `NLP_FEATURES` is kept out of `BASELINE_FEATURES`; `numeric_design_
   features(include_nlp)` + `load_model_data(include_nlp=...)` toggle it. `feature_version` ->
   **v2**.
-- **Ablation (exit criterion):** `hkjc ablate` walk-forwards the logit with vs without the
-  group and reports the delta. **Current result: ~0** (delta 0.0000 over recent seasons) --
-  but only because the **text is a 39-meeting pilot** (~1% lagged coverage). The pipeline is
-  complete + leakage-safe; the **definitive ablation needs the full text backfill** (`hkjc
-  scrape-text`, multi-hour, then `features nlp` + `features build` + `ablate`).
+- **Ablation (exit criterion) -- full text backfill done (195,195 comments, 94.3% lagged
+  coverage):** over 15,083 OOS races (logit, with vs without `nlp_text`) the group is
+  **marginal** -- log-loss 2.2364 -> 2.2351 (-0.0012), model-only WIN ROI -17.31% -> -17.53%,
+  market-blend WIN ROI -33.99% -> -32.59% (+1.4pp). A whisper of signal, **no material edge**
+  (PLAN §1F holds across the NLP lever too). Rerun after any text/feature change: `hkjc features
+  nlp` (re-embed) + `hkjc features build` + `hkjc ablate`.
 
 ## Next: M5 (risk / staking sweeps)
 
