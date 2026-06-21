@@ -69,8 +69,8 @@ data/              gitignored data lake: raw/ processed/ cache/ live_odds/ mlrun
 
 Note: `models/base.py` (the `ProbabilityModel` interface emitting a per-runner
 **Plackett–Luce strength vector**), `models/logit/`, `models/place/` (M2) plus `models/gbm/`,
-`models/nn/`, `models/ensemble/`, `models/calibrate/`, `models/blend/` and `experiments/`
-(M3) all exist. `features/nlp/` is M4. `risk/` is M5; `api/` is M6.
+`models/nn/`, `models/ensemble/`, `models/calibrate/`, `models/blend/`, `experiments/`
+(M3) and `features/nlp/` (M4) all exist. `risk/` is M5; `api/` is M6.
 
 ## Configuration
 
@@ -133,7 +133,8 @@ CLI: `hkjc scrape --date YYYY-MM-DD [--force]`, `hkjc backfill [--limit N] [--si
 `hkjc scrape-horses [--limit N]`, `hkjc scrape-people [--limit N]`,
 `hkjc scrape-weather [--since-year Y]`, `hkjc scrape-holidays`,
 `hkjc scrape-trials [--limit N]`, `hkjc scrape-trackwork [--limit N]`,
-`hkjc scrape-sectionals [--limit N]` (#7), `hkjc data-health`.
+`hkjc scrape-sectionals [--limit N]` (#7), `hkjc scrape-text [--limit N]` (#9), `hkjc
+data-health`.
 **Public holidays** (#14) are ingested from gov.hk open data (`data/holidays.py` →
 `public_holidays` view); the feed is served with a BOM and spans only ~current +/- 1 year.
 **Barrier trials** (#4, `parse/trials.py` → `barrier_trials` view): per-batch runs from
@@ -172,16 +173,26 @@ trackwork #5, sectional archive #7, racing news #9 (M4 NLP), pedigree #11, holid
 
 ## Milestone status
 
-M0, **M1 (scraper + storage), M2 (features + baseline + honest backtest), and M3 (model zoo +
-calibration + blend) are implementation-complete.** M1: every locked source has a parser +
-DuckDB view + offline fixture test, idempotency is proven, enumeration reaches ~2006, and the
-full backfill is **stored** (1,697 meetings, 2006-09 -> 2026-06; `hkjc data-health` reports
-coverage). M2: the as-of feature store + leakage canary, the PL-strength conditional-logit
-baseline + Harville PLACE, and an honest walk-forward backtest. M3: a GPU model zoo (GBMs +
-LambdaMART + tabular NNs + ensemble) behind one `ProbabilityModel`, calibration + market-blend,
-MLflow(sqlite)+Optuna, and a reproducible leaderboard. All green under ruff/mypy/pytest. Each
-milestone's exit criterion is in PLAN.md §2 — treat it as the definition of done. Forward
-race-card capture is parked with M7.
+M0, **M1 (scraper + storage), M2 (features + baseline + honest backtest), M3 (model zoo +
+calibration + blend), M4 (English NLP track), M5 (risk / staking sweeps), M6 (UI: React +
+FastAPI), and M7 (live ops + odds logging) are implementation-complete -- the whole M0-M7 build
+plan is done.** M1: every locked source has a parser + DuckDB view + offline
+fixture test, idempotency is proven, enumeration reaches ~2006, and the full backfill is
+**stored** (1,697 meetings, 2006-09 -> 2026-06; `hkjc data-health` reports coverage). M2: the
+as-of feature store + leakage canary, the PL-strength conditional-logit baseline + Harville
+PLACE, and an honest walk-forward backtest. M3: a GPU model zoo (GBMs + LambdaMART + tabular
+NNs + ensemble) behind one `ProbabilityModel`, calibration + market-blend, MLflow(sqlite)+Optuna,
+and a reproducible leaderboard. M4: comments-on-running + report text capture, spaCy-rules/lexicon
++ MiniLM embedding signals, a **lagged** `nlp_text` feature group, and an ablation harness. M5:
+Kelly variants (incl. exact correlated/simultaneous Kelly), exposure caps + legal rounding, a
+configurable losing-turnover rebate, and a multi-bankroll staking sweep + comparison report. M6:
+a read-only FastAPI backend (serves the DuckDB views + persisted snapshots) + a React/Vite/TS
+dashboard suite (data-health, backtest-explorer, experiment-compare, race-day) on the full PLAN
+stack. M7: the live-odds GraphQL logger (whitelisted queries) + model persistence + forward
+as-of features + a card->prediction->blend->Kelly race-day pipeline + a Task Scheduler script,
+verified live. All green under ruff/mypy/pytest (Python) + tsc/vite build (frontend). Each
+milestone's exit criterion is in PLAN.md §2 — treat it as the definition of done. **It recommends
+only; no code path ever places a bet.**
 
 ## M2 (features + baseline + honest backtest) — implementation-complete
 
@@ -237,7 +248,10 @@ Pipeline: `features/build.py` -> `features_runner` (processed Parquet + DuckDB v
   partitions; `hkjc scrape-sectionals [--limit N] [--since ...]` (idempotent, frozen-skip;
   URL date is `DD/MM/YYYY`, no `Racecourse` param). Offline fixture test. **Backfill pending**
   (user runs `hkjc scrape-sectionals` like the M1 backfill); once stored, the M2 speed-figure
-  proxy can switch to real splits (a clean feature-store add).
+  proxy can switch to real splits (a clean feature-store add). **Archive starts 2008-04-02:**
+  HKJC's `displaysectionaltime` returns an empty page for every meeting from 2006-09 to
+  2008-03 (verified) -> those parse to 0 rows (expected, not a bug, and the scraper goes
+  oldest-first), so backfill with `--since 2008-04-02` to skip ~1.5 empty seasons.
 
 ## M3 (model zoo + calibration + blend) — implementation-complete
 
@@ -275,12 +289,179 @@ Pipeline: `experiments/leaderboard.py` runs every model through `experiments/run
   binary log-loss, so their raw-margin softmax is over-confident and *needs* the calibration
   layer / a grouped objective. Reproducible from MLflow (config + data hash).
 
-## Next: M4 (NLP track, English)
+## M4 (English NLP track) — implementation-complete
 
-Scrape/parse English stewards' reports + comments-on-running -> **lagged** structured signals
-(`text_event_time < race_off_time`) via spaCy rules + lexicon + sentence-transformer
-embeddings; an ablatable feature group measured by its marginal ROI/log-loss contribution
-(PLAN.md §2 M4). Good non-M4 adds still open: **backfill sectionals** (`hkjc scrape-sectionals`,
-then switch the M2 speed-figure proxy to real per-200m splits), GBM
-**calibration/grouped-objective** tuning, and Optuna sweeps at scale. Add
-spaCy/sentence-transformers via `uv add` at M4.
+Pipeline: `data/parse/text.py` (scrape) -> `features/nlp/` (encode) -> lagged `nlp_text`
+feature group in `features/build.py` -> `experiments/ablation.py`. CLI: `hkjc scrape-text`,
+`hkjc features nlp`, `hkjc ablate`.
+
+- **Text capture (#9):** `corunning` (Comments on Running -- a clean **per-runner** table:
+  Placing/HorseNo/Horse/Jockey/Gear/Comment, horse_id in the anchor) -> `comments_on_running`
+  view. **URL is `corunning?Date=YYYYMMDD&RaceNo=N` (no `Racecourse` param).** Critical gotcha:
+  the page **silently ignores `racedate=YYYY/MM/DD`** (and every other param form) and returns
+  the *latest* meeting -- so the first cut stored the same latest-meeting comments for every
+  date. Always validate a per-date page by checking its data actually differs across dates (an
+  old date with no comments correctly returns empty with the right param). `hkjc scrape-text
+  [--limit N] [--since ...]` (per-race; idempotent, frozen). Offline fixture test. The
+  meeting-level prose reports (`racereportfull`/`veterinaryrecord`/`exceptionalfactors`) were
+  **dropped** -- those endpoints don't reliably honour the date (vet/exceptional return the
+  latest *available* record), so they'd store garbage; a browser-recon follow-up could recover
+  them later (like trackwork). NOTE sectionals' `displaysectionaltime?racedate=DD/MM/YYYY`
+  **does** honour the date (verified) -- only the text endpoints are quirky.
+- **Lagged discipline (PLAN §1C):** a comment describes the run it belongs to, so each NLP
+  signal is **shifted one run forward per horse** in `_add_nlp` -- the value seen for a target
+  race is the horse's *previous* comment (`text_event_time < race_off_time`). The leakage
+  canary still rides through.
+- **NLP signals (`features/nlp/`):** spaCy **blank-pipeline `PhraseMatcher`** over a curated
+  `lexicon.py` -> interpretable counts (trouble / slow_start / ran_on / easing / weakened /
+  wide / health); **MiniLM** (`all-MiniLM-L6-v2`, GPU/CPU) sentence embeddings reduced to a few
+  **anchor similarities** (closeness to "troubled run" / "won easing" / "no excuse") so the
+  384-dim vector becomes ablatable features. Cached to `processed/nlp_comment_features`
+  (`build_comment_features`; the embedding pass is the cost). No spaCy model download needed
+  (blank pipeline); MiniLM auto-downloads (~80MB) on first use.
+- **Ablatable group:** `NLP_FEATURES` is kept out of `BASELINE_FEATURES`; `numeric_design_
+  features(include_nlp)` + `load_model_data(include_nlp=...)` toggle it. `feature_version` ->
+  **v2**.
+- **Ablation (exit criterion) -- full text backfill done (195,195 comments, 94.3% lagged
+  coverage):** over 15,083 OOS races (logit, with vs without `nlp_text`) the group is
+  **marginal** -- log-loss 2.2364 -> 2.2351 (-0.0012), model-only WIN ROI -17.31% -> -17.53%,
+  market-blend WIN ROI -33.99% -> -32.59% (+1.4pp). A whisper of signal, **no material edge**
+  (PLAN §1F holds across the NLP lever too). Rerun after any text/feature change: `hkjc features
+  nlp` (re-embed) + `hkjc features build` + `hkjc ablate`.
+
+## M5 (risk / staking sweeps) — implementation-complete
+
+Pipeline: `risk/sweep.py` reuses `backtest.engine.walk_forward_oos` (the OOS WIN/PLACE preds,
+extracted from `run_backtest` so the M2 path is unchanged) -> a day-ordered card -> per-policy
+`risk/simulate.py` over `risk/staking.py` (+`risk/kelly.py`, `risk/rebate.py`) ->
+`risk/report.py`. CLI: `hkjc risk sweep [--bankrolls ...] [--pools win,place] [--rebate-rate R]`.
+
+- **Kelly** (`risk/kelly.py`): single-bet `(p*b-1)/(b-1)`; naive per-bet; **exact within-race
+  simultaneous Kelly** -- closed form `f_i = p_i - R/b_i` with reserve `R` per bet-set, taking the
+  `E[log wealth]`-max over expected-value-sorted prefixes (cross-checked against scipy SLSQP).
+  **Subtle, load-bearing:** `R` can sit **below 1**, so a mildly -EV runner can be bet *as a hedge*
+  -- the bet set is **not** simply "the +EV runners". Correlated Kelly *deploys more* than naive
+  when several runners are +EV (the hedge), reducing to single Kelly for one candidate.
+- **Staking** (`risk/staking.py`): flat / fixed_fraction / kelly_full / kelly_fractional{0.05..0.5},
+  in naive and correlated variants; +EV gate (>=5% net takeout); per-race 10% + per-day 25% caps;
+  legal HK$10 rounding applied **last** (so the granularity loss is what reaches the pool). WIN is
+  sized correlated-or-naive; **PLACE is per-bet** (approx) against a **constructed** place line
+  (Harville on the market WIN probs x place takeout -- HKJC publishes no historical place-odds line).
+- **Simulator** (`risk/simulate.py`): day-ordered compounding off the **start-of-day** bankroll
+  (a day's races sized simultaneously); terminal wealth, max drawdown, **bootstrap risk-of-ruin**
+  (P(equity < 10% of start)), Sharpe, rounding loss, rebate. Wealth conservation is property-tested.
+  **Pool-impact dilution is not modelled** -- the store has no pool totals, and a HK$10k cap is
+  <0.2% of HKJC's HK$-million WIN pools, so dilution is negligible across all four bankrolls.
+- **Rebate** (`risk/rebate.py`): a *configurable* rate on losing turnover above the HK$10k
+  per-betline threshold (rate 0 = the real HK$1k case; HKJC's actual schedule is **not** fabricated).
+  The report surfaces the threshold-crossing **frequency** per bankroll.
+
+**Result (14 policies x 4 bankrolls, 15,083 OOS races, seasons 2007-08..2025-26, feature_version
+v2, market-blend value lens):**
+- **No staking method beats the takeout** (PLAN §1F holds across the entire grid). Best ROI is
+  **fractional Kelly λ≈0.05-0.10 at ~-15%**, vs full Kelly ~-17%, flat -22%..-27%, fixed-fraction
+  -27%..-30% -- but the bootstrap CIs are wide and overlap, so the differences are **not**
+  significant; fractional Kelly's gain is variance/selectivity, not edge.
+- **Granularity (headline):** at **HK$1,000 flat and fixed-fraction place ZERO bets** -- the HK$10
+  minimum + 25% day cap collapse every diversified value stake below HK$10 (rounds to 0). Even
+  Kelly loses **98%** of its intended stake to rounding at HK$1k, falling monotonically to
+  **75% / 37% / 23%** at HK$10k / 50k / 100k. Small-bankroll value betting is mechanically crippled.
+- **Rebate threshold (headline):** the HK$10k losing-turnover threshold is crossed on **0 days at
+  HK$1k-10k, 3-6 at HK$50k, 16-17 at HK$100k** -- and only for the larger-per-bet Kelly methods
+  (flat's tiny stakes never accumulate enough losing turnover on a betline). A rebate would only
+  ever matter at large bankroll; at the real HK$1k default (rate 0) it is inert.
+- **Drawdown / ruin:** on a negative edge over ~1,600 days essentially everything ruins (equity
+  <10% of start; ruin_prob 0.94-1.0 at HK$10k+). Full Kelly ruins fastest; fractional Kelly only
+  slows the bleed. At HK$1k Kelly is too throttled by rounding to ruin.
+- **Correlated vs naive Kelly:** ~identical (full Kelly -17.00% naive vs -17.33% corr at HK$10k) --
+  after the 5% EV gate a race rarely has >1 +EV WIN runner, so the hedge correction seldom fires.
+  An honest "marginal" outcome for the correlated machinery, exactly as the math predicts.
+
+Artifacts: `data/processed/risk/staking_sweep.{csv,parquet}` + `staking_roi.png`. The console
+table prints with `tbl_formatting="ASCII_FULL"` (the Windows cp1252 console cannot encode polars'
+Unicode box-drawing), and `write_report` runs **before** the print so artifacts persist regardless.
+
+## M6 (UI: React + FastAPI) — implementation-complete
+
+A local, **read-only** FastAPI backend + a React/Vite/TS dashboard suite. CLI: `hkjc serve`
+(uvicorn) + `cd ui && npm run dev` (vite :5173, proxies `/api` -> :8000). The UI **recommends
+only -- there is no bet/write endpoint** (the hard invariant carries into the API + UI).
+
+- **Backend** (`src/hkjc/api/`): `app.py` `create_app()` + CORS; `service.py` reads the DuckDB
+  views **live** (health/races) + persisted `processed/` snapshots (backtest/leaderboard/staking);
+  `schemas.py` Pydantic v2 responses; `routes.py` 7 GET endpoints under `/api` (ping, health,
+  backtest, leaderboard, staking, races, raceday). `run_backtest`/`run_leaderboard` now persist
+  JSON snapshots (`backtest/serialize.py`) so the API serves real M2/M3 output **without
+  recompute**; the M5 staking parquet is read directly. `Api` config + `config/api.yaml`. 8
+  TestClient tests -- **CI-safe**: on a fresh checkout with no `data/`, endpoints degrade to
+  empty/zeros/404, so the tests assert the contract, not generated data.
+- **Frontend** (`ui/`, committed; `node_modules`/`dist` gitignored): Vite + React 18 + TS +
+  Tailwind + shadcn-style primitives (card/badge/button/table, hand-rolled to skip the
+  interactive `shadcn init`) + TanStack Query + Recharts. Four dashboards: **data-health**
+  (coverage stats + meetings/season bar + source table + recent races), **backtest-explorer**
+  (policy ROI table + WIN calibration curve + the M5 sweep with a bankroll selector),
+  **experiment-compare** (leaderboard table + model-WIN-ROI bars vs the takeout line),
+  **race-day** (mocked card with value/stake recs, flagged **MOCK** until M7). `vite build`
+  (tsc --noEmit + bundle) is green; verified rendering live against the API (all four dashboards
+  show real M2-M5 data).
+
+**Gotchas (hard-won):** **Node is not a Python dep** -- install LTS once (winget/nodejs.org);
+fresh shells won't see it on PATH until they restart (prepend `C:\Program Files\nodejs` or use
+full paths for one-off runs). The **Python CI stays Python-only**; the frontend is checked
+locally via `npm run build`. Recharts' `Tooltip` `formatter` value is `number|string|array`, so
+type the param inferred + coerce with `Number()` (a `(v:number)=>` annotation fails tsc). The
+shadcn `@apply border-border` (and the theme) needs Tailwind's config found, so run vite with
+**cwd = `ui/`** (the preview launcher's repo-root cwd breaks PostCSS config resolution).
+
+## M7 (live ops + odds logging) — implementation-complete
+
+The race-day system: live-odds GraphQL logger + forward card capture + a card->prediction
+pipeline. CLI: `hkjc train-production`, `hkjc log-odds`, `hkjc race-day`. **Recommends only --
+there is no bet/submit path anywhere.** Verified live against tomorrow's meeting (21 Jun ST,
+which already serves a card + flowing odds) and a live simulcast.
+
+- **GraphQL whitelist (HARD-WON, read before touching `data/live/graphql.py`):**
+  `info.cld.hkjc.com/graphql/base/` now rejects arbitrary queries with `WHITELIST_ERROR` (an
+  upstream change since planning -- it used to accept any `racing` query). It accepts **only the
+  exact registered query strings** the bet.hkjc.com app ships, byte-for-byte. So `CARD_QUERY`
+  (B2 card) + `ODDS_QUERY` (B1 WIN/PLA odds) are the **captured** operations + the mobile header
+  set (`origin/referer bet.hkjc.com`, Android UA, `sec-ch-ua`) -- **do not reformat them or add
+  fields** (changes the hash -> rejected). Re-capture from devtools if HKJC rotates them. The
+  feed serves only current/upcoming meetings and **falls back to the live meeting** when a
+  `(date, venueCode)` has no defined meeting -> callers check `MeetingCard.status` (DEFINED for
+  upcoming). `horse.id` is already the canonical `HK_YYYY_XXXX`. **B3 (per-pool investment) was
+  not captured** -> dropped (meeting-level `totalInvestment` comes from the card); capture it
+  later if wanted.
+- **Live-odds logger** (`data/live/logger.py` -> `live_odds_snapshots` view, append-only
+  timestamped Parquet under `raw/live_odds_snapshots/`): polls WIN/PLA pools, **dedups on
+  `lastUpdateTime`** (the gateway re-serves a stale timestamp until odds move). Verified: 264
+  real snapshots logged in one poll.
+- **Model persistence** (`models/persist.py`): `hkjc train-production --model <name>` fits any
+  zoo model (logit default) on all history -> `processed/models/<name>.joblib`;
+  `load_production_model` reloads it for inference (carries the design metadata).
+- **Forward features** (`features/build.build_forward_features`): injects the card's runners
+  into the historical runner spine so each horse's **prior** aggregates compute, runs the shared
+  `_compute_features` pipeline, returns the forward rows. Verified **exact-match (0.0 diff)** vs
+  the stored features for a past meeting. The whitelisted card query carries **no race
+  distance/going/postTime** (can't add fields), so those features are null -> median-imputed by
+  the model; the horse-keyed backbone (form/rating/connections/bio) drives the prediction.
+  `_add_rating` is forward-aware (folds in the card's `currentRating` via `_card_rating`).
+- **Race-day pipeline** (`data/live/raceday.py` -> `hkjc race-day` ->
+  `processed/raceday/<date>_<venue>.json`): card -> forward features -> persisted model -> WIN
+  softmax + Harville PLACE -> blend live WIN odds -> EV -> fractional-Kelly stakes (reuses M5).
+  **Verified end-to-end on the 21 Jun ST card with real live odds** (race 1 top pick ~+20% EV ->
+  a HK$10 Kelly stake; per-race WIN probs sum to 1). Sort forward rows race-contiguous before
+  Harville. The API `/api/raceday` serves the latest persisted card (else a mock); the M6
+  race-day dashboard renders it.
+- **Scheduler:** `scripts/register_raceday_task.ps1` registers a Windows Task Scheduler job to
+  run `hkjc race-day` at a cutoff (the user runs the script; nothing auto-registers).
+- **Verification reality:** the full intraday live dry-run is a race-day activity, but tomorrow's
+  ST card + already-flowing odds validate the whole path today. Offline fixture tests (captured
+  B1/B2 JSON in `fixtures/hkjc/`) keep CI green with no network.
+
+## Next: post-M7 (all milestones done)
+
+M0-M7 are implementation-complete. Open follow-ups (user's call): backfill **sectionals** (now
+in progress; archive starts 2008-04-02) + **text**, then switch the speed-figure proxy to real
+splits; GBM calibration/grouped-objective tuning; capture the B3 pool-investment query; collect
+live-odds history (the market-blend's historical eval stays a proxy until enough is logged).

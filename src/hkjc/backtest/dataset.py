@@ -41,8 +41,11 @@ class ModelData:
         return self.x_full[:, self.numeric_indices]
 
 
-def load_model_data(cfg: AppConfig | None = None) -> ModelData:
-    """Build the shared :class:`ModelData` from the persisted feature store."""
+def load_model_data(cfg: AppConfig | None = None, *, include_nlp: bool = False) -> ModelData:
+    """Build the shared :class:`ModelData` from the persisted feature store.
+
+    ``include_nlp`` appends the lagged NLP group to the numeric design (M4 ablation).
+    """
     cfg = cfg or get_config()
     df = store.load_features(cfg)
     key = pl.concat_str(
@@ -57,7 +60,7 @@ def load_model_data(cfg: AppConfig | None = None) -> ModelData:
     df = df.join(
         _dividend_lookup(cfg, "PLACE"), on=["race_date", "venue", "race_no", "saddle"], how="left"
     )
-    design = build_design(df)
+    design = build_design(df, include_nlp=include_nlp)
     return ModelData(
         x_full=design.x,
         numeric_indices=design.numeric_indices,

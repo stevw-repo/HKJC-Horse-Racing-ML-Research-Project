@@ -114,6 +114,23 @@ FEATURE_SPECS: tuple[FeatureSpec, ...] = (
     FeatureSpec("sire", "fundamental", "pedigree", "Sire name (high-cardinality; M3 GBM)."),
     FeatureSpec("dam", "fundamental", "pedigree", "Dam name (high-cardinality; M3 GBM)."),
     FeatureSpec("dams_sire", "fundamental", "pedigree", "Dam's sire (high-cardinality; M3 GBM)."),
+    # --- nlp_text (#9, M4; LAGGED = prior run's comment-on-running) ---------- #
+    FeatureSpec("nlp_trouble", "fundamental", "nlp_text", "Prior run: trouble-phrase count."),
+    FeatureSpec("nlp_slow_start", "fundamental", "nlp_text", "Prior run: slow-start count."),
+    FeatureSpec("nlp_ran_on", "fundamental", "nlp_text", "Prior run: ran-on/kept-on count."),
+    FeatureSpec("nlp_easing", "fundamental", "nlp_text", "Prior run: easing/in-hand count."),
+    FeatureSpec("nlp_weakened", "fundamental", "nlp_text", "Prior run: weakened/faded count."),
+    FeatureSpec("nlp_wide", "fundamental", "nlp_text", "Prior run: raced-wide count."),
+    FeatureSpec("nlp_health", "fundamental", "nlp_text", "Prior run: health/soundness count."),
+    FeatureSpec(
+        "nlp_sim_trouble", "fundamental", "nlp_text", "Prior run: MiniLM sim to 'trouble'."
+    ),
+    FeatureSpec(
+        "nlp_sim_easywin", "fundamental", "nlp_text", "Prior run: MiniLM sim to 'easy win'."
+    ),
+    FeatureSpec(
+        "nlp_sim_noexcuse", "fundamental", "nlp_text", "Prior run: MiniLM sim to 'no excuse'."
+    ),
     # --- market wall (closing line) ----------------------------------------- #
     FeatureSpec("market_prob", "market", "market", "Overround-adjusted SP-implied win prob."),
     FeatureSpec("win_odds", "market", "market", "Starting price (closing line; market data)."),
@@ -167,6 +184,27 @@ BASELINE_FEATURES: tuple[str, ...] = (
     "mean_temp",
     "is_public_holiday",
 )
+
+# The lagged NLP feature group (#9, M4) -- prior run's comment-on-running signals. Ablatable:
+# kept out of BASELINE_FEATURES so the ablation can add it and measure the marginal effect.
+NLP_FEATURES: tuple[str, ...] = (
+    "nlp_trouble",
+    "nlp_slow_start",
+    "nlp_ran_on",
+    "nlp_easing",
+    "nlp_weakened",
+    "nlp_wide",
+    "nlp_health",
+    "nlp_sim_trouble",
+    "nlp_sim_easywin",
+    "nlp_sim_noexcuse",
+)
+
+
+def numeric_design_features(include_nlp: bool = False) -> tuple[str, ...]:
+    """The numeric design columns, optionally with the lagged NLP group appended (M4 ablation)."""
+    return (*BASELINE_FEATURES, *NLP_FEATURES) if include_nlp else BASELINE_FEATURES
+
 
 # The canary rides alongside the real features through fit + backtest; it must score ~0.
 CANARY_FEATURE = "canary_random"

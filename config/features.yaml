@@ -2,8 +2,9 @@
 # `market` features are kept behind a hard wall from fundamental features (PLAN.md §1B);
 # `nlp_text` is strictly lagged (prior runs only, PLAN.md §1C) and ablatable (M4).
 features:
-  feature_version: v1           # bump when feature builders change (reproducibility)
+  feature_version: v2           # bump when feature builders change (reproducibility)
                                 # v1 (M3): layered debut-age heuristic for age_at_race
+                                # v2 (M4): lagged nlp_text group (comments-on-running)
 
   groups:
     form:           { enabled: true }

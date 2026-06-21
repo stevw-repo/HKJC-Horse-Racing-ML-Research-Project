@@ -208,16 +208,51 @@ def scrape_trackwork(
 @app.command(name="scrape-sectionals")
 def scrape_sectionals(
     limit: Annotated[int | None, typer.Option(help="Only the newest N meetings.")] = None,
+    since: Annotated[
+        str | None,
+        typer.Option(help="Only meetings on/after YYYY-MM-DD (archive starts 2008-04-02)."),
+    ] = None,
+    force: Annotated[bool, typer.Option(help="Re-fetch even if already stored.")] = False,
+) -> None:
+    """Scrape per-race sectional times (#7) for stored meetings, idempotently (M3).
+
+    HKJC's sectional archive begins 2008-04-02; meetings from 2006-09 to 2008-03 have none
+    (they return 0 rows -- expected, not an error). Use --since 2008-04-02 to skip that empty
+    early era on the first backfill.
+    """
+    from hkjc.data import pipeline
+
+    def _progress(day: date, venue: str, rows: int) -> None:
+        typer.echo(f"  {day} {venue}: {rows} sectional rows")
+
+    summary = pipeline.scrape_sectionals(
+        limit=limit,
+        since=date.fromisoformat(since) if since else None,
+        force=force,
+        on_meeting=_progress,
+    )
+    typer.echo(f"Sectionals: {summary['meetings']} meetings, {summary['sectional_rows']} rows.")
+
+
+@app.command(name="scrape-text")
+def scrape_text(
+    limit: Annotated[int | None, typer.Option(help="Only the newest N meetings.")] = None,
     since: Annotated[str | None, typer.Option(help="Only meetings on/after YYYY-MM-DD.")] = None,
     force: Annotated[bool, typer.Option(help="Re-fetch even if already stored.")] = False,
 ) -> None:
-    """Scrape per-race sectional times (#7) for stored meetings, idempotently (M3)."""
+    """Scrape English comments-on-running (#9) per race, idempotently (M4)."""
     from hkjc.data import pipeline
 
-    summary = pipeline.scrape_sectionals(
-        limit=limit, since=date.fromisoformat(since) if since else None, force=force
+    def _progress(day: date, venue: str, comments: int) -> None:
+        typer.echo(f"  {day} {venue}: {comments} comments")
+
+    summary = pipeline.scrape_text(
+        limit=limit,
+        since=date.fromisoformat(since) if since else None,
+        force=force,
+        on_meeting=_progress,
     )
-    typer.echo(f"Sectionals: {summary['meetings']} meetings, {summary['sectional_rows']} rows.")
+    typer.echo(f"Text: {summary['meetings']} meetings, {summary['comments']} comments.")
 
 
 @app.command(name="scrape-holidays")
@@ -248,6 +283,7 @@ def data_health() -> None:
     typer.echo(f"  trials       : {s['barrier_trials_rows']}")
     typer.echo(f"  trackwork    : {s['trackwork_rows']}")
     typer.echo(f"  sectionals   : {s['sectionals_rows']}")
+    typer.echo(f"  comments     : {s['comments_on_running_rows']}")
     typer.echo(f"  manifest urls: {s['manifest_urls']}")
     for season, n in sorted(s["seasons"].items()):
         typer.echo(f"    season {season}: {n} meetings")
@@ -257,6 +293,11 @@ features_app = typer.Typer(
     name="features", help="As-of feature store (M2).", no_args_is_help=True, add_completion=False
 )
 app.add_typer(features_app)
+
+risk_app = typer.Typer(
+    name="risk", help="Risk / staking sweeps (M5).", no_args_is_help=True, add_completion=False
+)
+app.add_typer(risk_app)
 
 
 @features_app.command("build")
@@ -269,6 +310,15 @@ def features_build() -> None:
         f"Features: {df.height} runner-rows x {df.width} cols -> features_runner "
         f"(version {df['feature_version'][0]})."
     )
+
+
+@features_app.command("nlp")
+def features_nlp() -> None:
+    """Encode stored comments-on-running into the cached per-run NLP feature table (M4)."""
+    from hkjc.features.nlp import build_comment_features
+
+    df = build_comment_features(persist=True)
+    typer.echo(f"NLP comment features: {df.height} rows x {df.width} cols.")
 
 
 @app.command()
@@ -357,15 +407,130 @@ def tune(
 
 
 @app.command()
-def predict() -> None:
-    """Predict WIN/PLACE probabilities for a race card (M2/M7)."""
-    _todo("predict", "M2/M7")
+def ablate(
+    seasons: Annotated[
+        int | None, typer.Option(help="Only the most recent N test seasons (default: all).")
+    ] = None,
+    market_weight: Annotated[float | None, typer.Option(help="Market-blend weight.")] = None,
+    ev: Annotated[float | None, typer.Option(help="EV edge threshold for the blend.")] = None,
+    seed: Annotated[int, typer.Option(help="RNG seed.")] = 0,
+) -> None:
+    """Ablate the NLP feature group: walk-forward logit with vs without it (M4 exit criterion)."""
+    from hkjc.experiments.ablation import format_ablation, run_ablation
+
+    res = run_ablation(
+        market_weight=market_weight, ev_threshold=ev, max_test_seasons=seasons, seed=seed
+    )
+    typer.echo(format_ablation(res))
+
+
+@risk_app.command("sweep")
+def risk_sweep(
+    bankrolls: Annotated[
+        str | None, typer.Option(help="Comma-separated bankrolls (default from config).")
+    ] = None,
+    pools: Annotated[
+        str, typer.Option(help="Pools to stake: win, place, or win,place.")
+    ] = "win,place",
+    rebate_rate: Annotated[
+        float, typer.Option(help="Rebate rate on losing turnover above HK$10k (default 0).")
+    ] = 0.0,
+    l2: Annotated[float, typer.Option(help="Ridge penalty for the conditional logit.")] = 1.0,
+    seed: Annotated[int, typer.Option(help="RNG seed.")] = 0,
+) -> None:
+    """Sweep staking methods x bankrolls and write the comparison report (M5)."""
+    from hkjc.common.config import get_config
+    from hkjc.risk.report import format_sweep, write_report
+    from hkjc.risk.sweep import run_sweep
+
+    cfg = get_config()
+    bk = [float(x) for x in bankrolls.split(",")] if bankrolls else None
+    pool_t = tuple(p.strip() for p in pools.split(",") if p.strip())
+    res = run_sweep(cfg, bankrolls=bk, pools=pool_t, rebate_rate=rebate_rate, l2=l2, seed=seed)
+    paths = write_report(res, cfg)  # persist before printing (console encoding is fragile)
+    typer.echo(format_sweep(res))
+    typer.echo(f"\nWrote: {paths['csv']}\n       {paths['parquet']}\n       {paths['png']}")
 
 
 @app.command()
-def poll() -> None:
-    """Poll the live GraphQL odds API and log snapshots (M7)."""
-    _todo("poll", "M7 (live ops + odds logging)")
+def serve(
+    host: Annotated[str | None, typer.Option(help="Bind host (default from config).")] = None,
+    port: Annotated[int | None, typer.Option(help="Bind port (default from config).")] = None,
+    reload: Annotated[bool, typer.Option("--reload", help="Auto-reload on changes (dev).")] = False,
+) -> None:
+    """Run the FastAPI server backing the dashboards (M6)."""
+    import uvicorn
+
+    from hkjc.common.config import get_config
+
+    cfg = get_config()
+    uvicorn.run(
+        "hkjc.api.app:app", host=host or cfg.api.host, port=port or cfg.api.port, reload=reload
+    )
+
+
+@app.command(name="train-production")
+def train_production(
+    model: Annotated[
+        str, typer.Option(help="Model to persist (logit, catboost, ensemble, ...).")
+    ] = "logit",
+) -> None:
+    """Fit a model on all history and persist it for race-day inference (M7)."""
+    from hkjc.models.persist import train_production_model
+
+    path = train_production_model(model_name=model)
+    typer.echo(f"Saved production model '{model}' -> {path}")
+
+
+@app.command(name="log-odds")
+def log_odds_cmd(
+    date_str: Annotated[str, typer.Option("--date", help="Meeting date YYYY-MM-DD.")],
+    venue: Annotated[str, typer.Option(help="Venue code: ST or HV.")] = "ST",
+    rounds: Annotated[int, typer.Option(help="Number of poll cycles.")] = 1,
+    interval: Annotated[float, typer.Option(help="Seconds between polls.")] = 30.0,
+) -> None:
+    """Log live WIN/PLACE odds snapshots for a meeting (M7). Logs only; never bets."""
+    from hkjc.data.live.logger import log_odds
+
+    res = log_odds(
+        day=date.fromisoformat(date_str),
+        venue=venue,
+        rounds=rounds,
+        interval=interval,
+        on_round=lambda c, n: typer.echo(f"  round {c + 1}/{rounds}: {n} new snapshot rows"),
+    )
+    typer.echo(f"Logged {res['snapshots']} odds snapshots over {res['rounds']} round(s).")
+
+
+@app.command(name="race-day")
+def race_day_cmd(
+    date_str: Annotated[str, typer.Option("--date", help="Meeting date YYYY-MM-DD.")],
+    venue: Annotated[str, typer.Option(help="Venue code: ST or HV.")] = "ST",
+    model: Annotated[str, typer.Option(help="Persisted model to use.")] = "logit",
+    no_odds: Annotated[
+        bool, typer.Option("--no-odds", help="Skip live odds (model-only).")
+    ] = False,
+) -> None:
+    """Build the race-day recommendation card (M7 exit criterion). Recommends only; never bets."""
+    from hkjc.data.live.raceday import run_raceday
+
+    card = run_raceday(
+        day=date.fromisoformat(date_str), venue=venue, model_name=model, fetch_odds=not no_odds
+    )
+    typer.echo(
+        f"{card.venue} {card.race_date} -- model {card.model_name} -- "
+        f"live_odds={card.has_live_odds} -- {len(card.races)} races\n{card.note}\n"
+    )
+    for race in card.races:
+        typer.echo(f"Race {race.race_no} ({race.status}):")
+        for r in race.runners[:4]:
+            odds = f"{r.win_odds}" if r.win_odds is not None else "-"
+            ev = f"{r.ev:+.1%}" if r.ev is not None else "-"
+            stake = f"HK${r.stake:.0f}" if r.stake > 0 else "-"
+            typer.echo(
+                f"  #{r.saddle:>2} {(r.name or '')[:18]:<18} win {r.win_prob:>5.1%} "
+                f"place {r.place_prob:>5.1%} odds {odds:>5} EV {ev:>7} stake {stake}"
+            )
 
 
 if __name__ == "__main__":  # pragma: no cover
