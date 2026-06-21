@@ -469,16 +469,68 @@ def serve(
     )
 
 
-@app.command()
-def predict() -> None:
-    """Predict WIN/PLACE probabilities for a race card (M2/M7)."""
-    _todo("predict", "M2/M7")
+@app.command(name="train-production")
+def train_production(
+    model: Annotated[
+        str, typer.Option(help="Model to persist (logit, catboost, ensemble, ...).")
+    ] = "logit",
+) -> None:
+    """Fit a model on all history and persist it for race-day inference (M7)."""
+    from hkjc.models.persist import train_production_model
+
+    path = train_production_model(model_name=model)
+    typer.echo(f"Saved production model '{model}' -> {path}")
 
 
-@app.command()
-def poll() -> None:
-    """Poll the live GraphQL odds API and log snapshots (M7)."""
-    _todo("poll", "M7 (live ops + odds logging)")
+@app.command(name="log-odds")
+def log_odds_cmd(
+    date_str: Annotated[str, typer.Option("--date", help="Meeting date YYYY-MM-DD.")],
+    venue: Annotated[str, typer.Option(help="Venue code: ST or HV.")] = "ST",
+    rounds: Annotated[int, typer.Option(help="Number of poll cycles.")] = 1,
+    interval: Annotated[float, typer.Option(help="Seconds between polls.")] = 30.0,
+) -> None:
+    """Log live WIN/PLACE odds snapshots for a meeting (M7). Logs only; never bets."""
+    from hkjc.data.live.logger import log_odds
+
+    res = log_odds(
+        day=date.fromisoformat(date_str),
+        venue=venue,
+        rounds=rounds,
+        interval=interval,
+        on_round=lambda c, n: typer.echo(f"  round {c + 1}/{rounds}: {n} new snapshot rows"),
+    )
+    typer.echo(f"Logged {res['snapshots']} odds snapshots over {res['rounds']} round(s).")
+
+
+@app.command(name="race-day")
+def race_day_cmd(
+    date_str: Annotated[str, typer.Option("--date", help="Meeting date YYYY-MM-DD.")],
+    venue: Annotated[str, typer.Option(help="Venue code: ST or HV.")] = "ST",
+    model: Annotated[str, typer.Option(help="Persisted model to use.")] = "logit",
+    no_odds: Annotated[
+        bool, typer.Option("--no-odds", help="Skip live odds (model-only).")
+    ] = False,
+) -> None:
+    """Build the race-day recommendation card (M7 exit criterion). Recommends only; never bets."""
+    from hkjc.data.live.raceday import run_raceday
+
+    card = run_raceday(
+        day=date.fromisoformat(date_str), venue=venue, model_name=model, fetch_odds=not no_odds
+    )
+    typer.echo(
+        f"{card.venue} {card.race_date} -- model {card.model_name} -- "
+        f"live_odds={card.has_live_odds} -- {len(card.races)} races\n{card.note}\n"
+    )
+    for race in card.races:
+        typer.echo(f"Race {race.race_no} ({race.status}):")
+        for r in race.runners[:4]:
+            odds = f"{r.win_odds}" if r.win_odds is not None else "-"
+            ev = f"{r.ev:+.1%}" if r.ev is not None else "-"
+            stake = f"HK${r.stake:.0f}" if r.stake > 0 else "-"
+            typer.echo(
+                f"  #{r.saddle:>2} {(r.name or '')[:18]:<18} win {r.win_prob:>5.1%} "
+                f"place {r.place_prob:>5.1%} odds {odds:>5} EV {ev:>7} stake {stake}"
+            )
 
 
 if __name__ == "__main__":  # pragma: no cover

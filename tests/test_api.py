@@ -19,11 +19,13 @@ def test_ping() -> None:
     assert response.json() == {"status": "ok"}
 
 
-def test_raceday_is_flagged_mock() -> None:
+def test_raceday_shape() -> None:
+    # mock=True on a fresh checkout; mock=False once `hkjc race-day` has written a real card.
     response = client.get("/api/raceday")
     assert response.status_code == 200
     body = response.json()
-    assert body["mock"] is True  # never present real money / live data before M7
+    assert isinstance(body["mock"], bool)
+    assert {"race_date", "venue", "model_name", "has_live_odds", "races"} <= body.keys()
     assert body["races"] and body["races"][0]["runners"]
 
 

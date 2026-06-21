@@ -22,7 +22,7 @@ conventions and current state of this repo.
 | **M4** | NLP track (English): comments-on-running -> lagged signals + ablation | ✅ done |
 | **M5** | Risk / staking sweeps (Kelly variants, caps, rounding, multi-bankroll) | ✅ done |
 | **M6** | UI: read-only FastAPI + React/Vite/TS dashboards | ✅ done |
-| M7 | Live ops + odds logging | ◻ next |
+| **M7** | Live ops: GraphQL odds logger + race-day prediction pipeline | ✅ done |
 
 ## Quickstart
 
@@ -174,6 +174,26 @@ the M7 live logger lands): **Data Health** (coverage + meetings/season + recent 
 happens in a request. The frontend (`ui/`) builds with `npm run build` (`tsc` + `vite`); the
 Python CI stays Python-only.
 
+## Live ops + race day (M7)
+
+The race-day system: a live-odds GraphQL logger, a forward card capture, and a pipeline that
+turns the card + live odds into staking *recommendations*. **It logs and recommends only — there
+is no bet/submit path.**
+
+```bash
+uv run hkjc train-production --model logit   # fit a model on all history, persist for inference
+uv run hkjc log-odds --date 2026-06-21 --venue ST --rounds 120 --interval 30   # log odds snapshots
+uv run hkjc race-day --date 2026-06-21 --venue ST   # card -> predict -> blend -> value -> Kelly
+```
+
+The live WIN/PLACE odds come from HKJC's public GraphQL gateway via the **exact whitelisted
+queries** the bet.hkjc.com app uses (an arbitrary query is rejected). `race-day` fetches the
+card, builds as-of features for its runners, predicts WIN/PLACE with the persisted model, blends
+the live odds, flags positive-EV value, and sizes fractional-Kelly stakes — writing a
+recommendation card to `data/processed/raceday/` that the **Race Day dashboard** renders. Snapshots
+are deduplicated on `lastUpdateTime` into the `live_odds_snapshots` view.
+`scripts/register_raceday_task.ps1` registers a Windows Task Scheduler job to run it at a cutoff.
+
 ## Configuration
 
 YAML under [`config/`](config/), loaded and validated via `pydantic-settings`
@@ -186,7 +206,7 @@ e.g. `HKJC_RISK__BANKROLL=5000`). `config/local.yaml` is a gitignored override l
 config/            # YAML: paths, sources, features, risk, backtest, models
 src/hkjc/
   common/          # config, logging, keys, time (HKT)
-  data/            # scrape · parse · store (DuckDB+Parquet) · weather · holidays · live(M7)
+  data/            # scrape · parse · store (DuckDB+Parquet) · weather · holidays · live/ (M7 GraphQL)
   features/        # as-of feature store · canary · design matrix (M2/M3) · nlp/ lagged text (M4)
   models/          # ProbabilityModel · logit · place (M2) · gbm · nn · ensemble · calibrate · blend (M3)
   backtest/        # walk-forward engine · pari-mutuel sim · metrics · bootstrap · dataset (M2/M3)

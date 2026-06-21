@@ -34,10 +34,11 @@ def test_doctor_runs() -> None:
     assert "Enabled alternative data sources" in result.stdout
 
 
-def test_predict_stub_runs() -> None:
-    result = runner.invoke(app, ["predict"])
+def test_raceday_help_runs() -> None:
+    # `race-day` (M7) hits the live API, so only smoke its wiring via --help.
+    result = runner.invoke(app, ["race-day", "--help"])
     assert result.exit_code == 0
-    assert "M2/M7" in result.stdout
+    assert "recommendation card" in result.stdout.lower()
 
 
 def test_train_help_runs() -> None:

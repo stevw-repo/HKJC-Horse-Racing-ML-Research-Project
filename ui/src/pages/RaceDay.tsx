@@ -38,8 +38,8 @@ export function RaceDay() {
                     {card.venue} Race {race.race_no}
                   </CardTitle>
                   <CardDescription>
-                    {card.meeting_date} - {race.distance}m - {race.going}. Recommendations only;
-                    the platform never places a bet.
+                    {card.race_date} - {race.status ?? ""} - model {card.model_name}.
+                    Recommendations only; the platform never places a bet.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -57,14 +57,22 @@ export function RaceDay() {
                     </TableHeader>
                     <TableBody>
                       {race.runners.map((r) => (
-                        <TableRow key={r.saddle}>
+                        <TableRow key={`${race.race_no}-${r.saddle}`}>
                           <TableCell>{r.saddle}</TableCell>
-                          <TableCell className="font-medium">{r.horse}</TableCell>
+                          <TableCell className="font-medium">{r.name ?? r.horse_id}</TableCell>
                           <TableCell className="text-right">{pct(r.win_prob)}</TableCell>
                           <TableCell className="text-right">{pct(r.place_prob)}</TableCell>
-                          <TableCell className="text-right">{r.win_odds.toFixed(1)}</TableCell>
                           <TableCell className="text-right">
-                            <span className={r.ev >= 0.05 ? "text-emerald-700" : "text-muted-foreground"}>
+                            {r.win_odds != null ? r.win_odds.toFixed(1) : "-"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <span
+                              className={
+                                r.ev != null && r.ev >= 0.05
+                                  ? "text-emerald-700"
+                                  : "text-muted-foreground"
+                              }
+                            >
                               {pct(r.ev)}
                             </span>
                           </TableCell>

@@ -92,26 +92,28 @@ export interface Health {
 }
 
 export interface RaceDayRunner {
-  saddle: number;
-  horse: string;
+  saddle: number | null;
+  horse_id: string | null;
+  name: string | null;
   win_prob: number;
   place_prob: number;
-  win_odds: number;
-  ev: number;
+  win_odds: number | null;
+  ev: number | null;
   stake: number;
 }
 
 export interface RaceDayRace {
   race_no: number;
-  distance: number;
-  going: string;
+  status: string | null;
   runners: RaceDayRunner[];
 }
 
 export interface RaceDay {
   mock: boolean;
-  meeting_date: string;
+  race_date: string;
   venue: string;
+  model_name: string;
+  has_live_odds: boolean;
   note: string;
   races: RaceDayRace[];
 }

@@ -174,8 +174,9 @@ trackwork #5, sectional archive #7, racing news #9 (M4 NLP), pedigree #11, holid
 ## Milestone status
 
 M0, **M1 (scraper + storage), M2 (features + baseline + honest backtest), M3 (model zoo +
-calibration + blend), M4 (English NLP track), M5 (risk / staking sweeps), and M6 (UI: React +
-FastAPI) are implementation-complete.** M1: every locked source has a parser + DuckDB view + offline
+calibration + blend), M4 (English NLP track), M5 (risk / staking sweeps), M6 (UI: React +
+FastAPI), and M7 (live ops + odds logging) are implementation-complete -- the whole M0-M7 build
+plan is done.** M1: every locked source has a parser + DuckDB view + offline
 fixture test, idempotency is proven, enumeration reaches ~2006, and the full backfill is
 **stored** (1,697 meetings, 2006-09 -> 2026-06; `hkjc data-health` reports coverage). M2: the
 as-of feature store + leakage canary, the PL-strength conditional-logit baseline + Harville
@@ -187,9 +188,11 @@ Kelly variants (incl. exact correlated/simultaneous Kelly), exposure caps + lega
 configurable losing-turnover rebate, and a multi-bankroll staking sweep + comparison report. M6:
 a read-only FastAPI backend (serves the DuckDB views + persisted snapshots) + a React/Vite/TS
 dashboard suite (data-health, backtest-explorer, experiment-compare, race-day) on the full PLAN
-stack. All green under ruff/mypy/pytest (Python) + tsc/vite build (frontend). Each milestone's
-exit criterion is in PLAN.md §2 — treat it as the definition of done. Forward race-card capture
-is parked with M7.
+stack. M7: the live-odds GraphQL logger (whitelisted queries) + model persistence + forward
+as-of features + a card->prediction->blend->Kelly race-day pipeline + a Task Scheduler script,
+verified live. All green under ruff/mypy/pytest (Python) + tsc/vite build (frontend). Each
+milestone's exit criterion is in PLAN.md §2 — treat it as the definition of done. **It recommends
+only; no code path ever places a bet.**
 
 ## M2 (features + baseline + honest backtest) — implementation-complete
 
@@ -410,11 +413,55 @@ type the param inferred + coerce with `Number()` (a `(v:number)=>` annotation fa
 shadcn `@apply border-border` (and the theme) needs Tailwind's config found, so run vite with
 **cwd = `ui/`** (the preview launcher's repo-root cwd breaks PostCSS config resolution).
 
-## Next: M7 (live ops + odds logging)
+## M7 (live ops + odds logging) — implementation-complete
 
-GraphQL live-odds snapshot logger (B1/B2/B3) keyed on `lastUpdateTime`; race-day pipeline
-(scrape card -> predict -> blend -> value vs live odds -> stake rec at a fixed cutoff); Windows
-Task Scheduler automation; **no bet is ever placed** (PLAN.md §2 M7). This also lights up the
-**forward race-card capture** parked since M1 and turns the race-day dashboard real. Still-open
-data adds: **backfill sectionals + text** (then switch the speed-figure proxy to real splits),
-GBM calibration/grouped-objective tuning.
+The race-day system: live-odds GraphQL logger + forward card capture + a card->prediction
+pipeline. CLI: `hkjc train-production`, `hkjc log-odds`, `hkjc race-day`. **Recommends only --
+there is no bet/submit path anywhere.** Verified live against tomorrow's meeting (21 Jun ST,
+which already serves a card + flowing odds) and a live simulcast.
+
+- **GraphQL whitelist (HARD-WON, read before touching `data/live/graphql.py`):**
+  `info.cld.hkjc.com/graphql/base/` now rejects arbitrary queries with `WHITELIST_ERROR` (an
+  upstream change since planning -- it used to accept any `racing` query). It accepts **only the
+  exact registered query strings** the bet.hkjc.com app ships, byte-for-byte. So `CARD_QUERY`
+  (B2 card) + `ODDS_QUERY` (B1 WIN/PLA odds) are the **captured** operations + the mobile header
+  set (`origin/referer bet.hkjc.com`, Android UA, `sec-ch-ua`) -- **do not reformat them or add
+  fields** (changes the hash -> rejected). Re-capture from devtools if HKJC rotates them. The
+  feed serves only current/upcoming meetings and **falls back to the live meeting** when a
+  `(date, venueCode)` has no defined meeting -> callers check `MeetingCard.status` (DEFINED for
+  upcoming). `horse.id` is already the canonical `HK_YYYY_XXXX`. **B3 (per-pool investment) was
+  not captured** -> dropped (meeting-level `totalInvestment` comes from the card); capture it
+  later if wanted.
+- **Live-odds logger** (`data/live/logger.py` -> `live_odds_snapshots` view, append-only
+  timestamped Parquet under `raw/live_odds_snapshots/`): polls WIN/PLA pools, **dedups on
+  `lastUpdateTime`** (the gateway re-serves a stale timestamp until odds move). Verified: 264
+  real snapshots logged in one poll.
+- **Model persistence** (`models/persist.py`): `hkjc train-production --model <name>` fits any
+  zoo model (logit default) on all history -> `processed/models/<name>.joblib`;
+  `load_production_model` reloads it for inference (carries the design metadata).
+- **Forward features** (`features/build.build_forward_features`): injects the card's runners
+  into the historical runner spine so each horse's **prior** aggregates compute, runs the shared
+  `_compute_features` pipeline, returns the forward rows. Verified **exact-match (0.0 diff)** vs
+  the stored features for a past meeting. The whitelisted card query carries **no race
+  distance/going/postTime** (can't add fields), so those features are null -> median-imputed by
+  the model; the horse-keyed backbone (form/rating/connections/bio) drives the prediction.
+  `_add_rating` is forward-aware (folds in the card's `currentRating` via `_card_rating`).
+- **Race-day pipeline** (`data/live/raceday.py` -> `hkjc race-day` ->
+  `processed/raceday/<date>_<venue>.json`): card -> forward features -> persisted model -> WIN
+  softmax + Harville PLACE -> blend live WIN odds -> EV -> fractional-Kelly stakes (reuses M5).
+  **Verified end-to-end on the 21 Jun ST card with real live odds** (race 1 top pick ~+20% EV ->
+  a HK$10 Kelly stake; per-race WIN probs sum to 1). Sort forward rows race-contiguous before
+  Harville. The API `/api/raceday` serves the latest persisted card (else a mock); the M6
+  race-day dashboard renders it.
+- **Scheduler:** `scripts/register_raceday_task.ps1` registers a Windows Task Scheduler job to
+  run `hkjc race-day` at a cutoff (the user runs the script; nothing auto-registers).
+- **Verification reality:** the full intraday live dry-run is a race-day activity, but tomorrow's
+  ST card + already-flowing odds validate the whole path today. Offline fixture tests (captured
+  B1/B2 JSON in `fixtures/hkjc/`) keep CI green with no network.
+
+## Next: post-M7 (all milestones done)
+
+M0-M7 are implementation-complete. Open follow-ups (user's call): backfill **sectionals** (now
+in progress; archive starts 2008-04-02) + **text**, then switch the speed-figure proxy to real
+splits; GBM calibration/grouped-objective tuning; capture the B3 pool-investment query; collect
+live-odds history (the market-blend's historical eval stays a proxy until enough is logged).

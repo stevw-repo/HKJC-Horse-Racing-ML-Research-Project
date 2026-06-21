@@ -94,31 +94,33 @@ class RaceSummary(BaseModel):
 
 
 class RaceDayRunner(BaseModel):
-    """A mocked race-day runner: model probabilities + value vs the (mock) live odds."""
+    """A race-day runner: model probabilities + value vs the live odds (M7)."""
 
-    saddle: int
-    horse: str
+    saddle: int | None
+    horse_id: str | None
+    name: str | None
     win_prob: float
     place_prob: float
-    win_odds: float
-    ev: float
+    win_odds: float | None = None
+    ev: float | None = None
     stake: float
 
 
 class RaceDayRace(BaseModel):
-    """A mocked upcoming race with value-staking recommendations."""
+    """An upcoming race with value-staking recommendations."""
 
     race_no: int
-    distance: int
-    going: str
+    status: str | None = None
     runners: list[RaceDayRunner]
 
 
 class RaceDayResponse(BaseModel):
-    """A mocked upcoming card. ``mock`` is always true until the M7 live logger lands."""
+    """An upcoming card with recommendations. ``mock`` true until `hkjc race-day` has run."""
 
     mock: bool
-    meeting_date: str
+    race_date: str
     venue: str
+    model_name: str
+    has_live_odds: bool
     note: str
     races: list[RaceDayRace]

@@ -40,6 +40,7 @@ VIEW_TABLES = (
     "trackwork",
     "sectionals",
     "comments_on_running",
+    "live_odds_snapshots",
 )
 
 _RACES_SCHEMA: dict[str, pl.DataType] = {
@@ -361,6 +362,38 @@ def write_comments(raw_dir: Path, race_date: date, venue: str, rows: list[dict[s
     directory.mkdir(parents=True, exist_ok=True)
     full = [{"race_date": race_date, "venue": venue, **row} for row in rows]
     pl.DataFrame(full, schema=_COMMENTS_SCHEMA).write_parquet(directory / "comments.parquet")
+    return len(full)
+
+
+_LIVE_ODDS_SCHEMA: dict[str, pl.DataType] = {
+    "snapshot_ts": pl.String(),
+    "race_date": pl.Date(),
+    "venue": pl.String(),
+    "race_no": pl.Int64(),
+    "pool_type": pl.String(),
+    "comb": pl.String(),
+    "saddle": pl.Int64(),
+    "odds_value": pl.Float64(),
+    "odds_drop": pl.Float64(),
+    "hot_fav": pl.Boolean(),
+    "status": pl.String(),
+    "sell_status": pl.String(),
+    "last_update_time": pl.String(),
+}
+
+
+def write_live_odds(raw_dir: Path, race_date: date, venue: str, rows: list[dict[str, Any]]) -> int:
+    """Append a live-odds snapshot batch (M7) as a timestamped Parquet file.
+
+    Append-only: each poll writes a new ``snap_*.parquet`` keyed on ``last_update_time`` so the
+    ``live_odds_snapshots`` view accumulates the full intraday time series."""
+    if not rows:
+        return 0
+    directory = _meeting_dir(raw_dir, "live_odds_snapshots", race_date, venue)
+    directory.mkdir(parents=True, exist_ok=True)
+    stamp = rows[0]["snapshot_ts"].replace(":", "").replace(".", "").replace("+", "p")
+    full = [{"race_date": race_date, "venue": venue, **row} for row in rows]
+    pl.DataFrame(full, schema=_LIVE_ODDS_SCHEMA).write_parquet(directory / f"snap_{stamp}.parquet")
     return len(full)
 
 

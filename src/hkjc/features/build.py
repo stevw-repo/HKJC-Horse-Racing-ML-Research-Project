@@ -287,6 +287,12 @@ def _add_rating(runs: pl.DataFrame, cfg: AppConfig) -> pl.DataFrame:
             .rename({"rating": "as_of_rating"})
         )
         runs = runs.join(ratings, on=["horse_id", "race_index"], how="left")
+    # Forward race-day cards (M7) have no stored race_index to join on, so they carry their
+    # own as-of rating from the GraphQL card -- fold it in before the trend is computed.
+    if "_card_rating" in runs.columns:
+        runs = runs.with_columns(
+            as_of_rating=pl.coalesce([pl.col("as_of_rating"), pl.col("_card_rating")])
+        )
     runs = runs.sort(["horse_id", "race_date", "race_no"]).with_columns(
         rating_trend3=(
             pl.col("as_of_rating") - pl.col("as_of_rating").shift(3).over("horse_id")
@@ -424,6 +430,20 @@ def _add_nlp(runs: pl.DataFrame, cfg: AppConfig) -> pl.DataFrame:
     )
 
 
+def _compute_features(runs: pl.DataFrame, cfg: AppConfig) -> pl.DataFrame:
+    """The as-of feature pipeline (shared by the historical build + the M7 forward card)."""
+    runs = runs.with_row_index("_row")
+    runs = _race_context(runs, cfg)
+    runs = _horse_history(runs)
+    runs = _connection_rates(runs, "jockey_name", "jockey_code", "jockey")
+    runs = _connection_rates(runs, "trainer_name", "trainer_code", "trainer")
+    runs = _add_rating(runs, cfg)
+    runs = _add_bio(runs, cfg)
+    runs = _add_context(runs, cfg)
+    runs = _add_nlp(runs, cfg)
+    return runs
+
+
 def build_features(cfg: AppConfig | None = None, *, persist: bool = True) -> pl.DataFrame:
     """Build the as-of ``features_runner`` table and (optionally) persist it.
 
@@ -435,15 +455,7 @@ def build_features(cfg: AppConfig | None = None, *, persist: bool = True) -> pl.
     if runs.is_empty():
         msg = "No results/races stored; run the M1 scraper first."
         raise RuntimeError(msg)
-    runs = runs.with_row_index("_row")
-    runs = _race_context(runs, cfg)
-    runs = _horse_history(runs)
-    runs = _connection_rates(runs, "jockey_name", "jockey_code", "jockey")
-    runs = _connection_rates(runs, "trainer_name", "trainer_code", "trainer")
-    runs = _add_rating(runs, cfg)
-    runs = _add_bio(runs, cfg)
-    runs = _add_context(runs, cfg)
-    runs = _add_nlp(runs, cfg)
+    runs = _compute_features(runs, cfg)
 
     wanted = [spec.name for spec in FEATURE_SPECS]
     for name in wanted:
@@ -460,3 +472,33 @@ def build_features(cfg: AppConfig | None = None, *, persist: bool = True) -> pl.
     if persist:
         store.write_features(out, cfg)
     return out
+
+
+def build_forward_features(
+    forward: pl.DataFrame, cfg: AppConfig | None = None, *, history: pl.DataFrame | None = None
+) -> pl.DataFrame:
+    """Compute as-of features for an upcoming card's runners (M7 race-day).
+
+    ``forward`` is one row per upcoming runner with the runner-spine columns (race_date, venue,
+    race_no, saddle, horse_id, jockey/trainer name+code, draw, distance_m, going, surface, rail,
+    race_class, plus ``_card_rating`` from the GraphQL card); outcome columns are simply absent.
+    The card's runners are appended to the historical runner spine so each horse's **prior**
+    aggregates pick up its real history, the shared pipeline runs, and the forward rows are
+    returned with the same columns as :func:`build_features`. In production the upcoming meeting
+    is not yet in ``results`` (no overlap); ``history`` lets a test truncate the spine.
+    """
+    cfg = cfg or get_config()
+    hist = history if history is not None else _load_runs(cfg)
+    if hist.is_empty():
+        msg = "No historical results stored; run the M1 scraper first."
+        raise RuntimeError(msg)
+    combined = pl.concat(
+        [hist.with_columns(_forward=pl.lit(False)), forward.with_columns(_forward=pl.lit(True))],
+        how="diagonal_relaxed",
+    )
+    out = _compute_features(combined, cfg).filter(pl.col("_forward"))
+    wanted = [spec.name for spec in FEATURE_SPECS]
+    for name in wanted:
+        if name not in out.columns:
+            out = out.with_columns(pl.lit(None).alias(name))
+    return out.select(wanted).with_columns(feature_version=pl.lit(cfg.features.feature_version))

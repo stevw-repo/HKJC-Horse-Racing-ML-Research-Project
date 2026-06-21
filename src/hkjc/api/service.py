@@ -94,14 +94,22 @@ def races(limit: int = 50, cfg: AppConfig | None = None) -> list[RaceSummary]:
     ]
 
 
-def raceday() -> RaceDayResponse:
-    """A mocked upcoming card with value-staking recommendations (real arrives at M7).
+def raceday(cfg: AppConfig | None = None) -> RaceDayResponse:
+    """The latest race-day recommendation card from `hkjc race-day` (M7), or a mock if none.
 
     Recommendations only -- the platform never places a bet (hard invariant)."""
+    cfg = cfg or get_config()
+    folder = cfg.paths.processed_dir / "raceday"
+    files = sorted(folder.glob("*.json")) if folder.exists() else []
+    if files:
+        data = _read_json(files[-1])
+        if data is not None:
+            return RaceDayResponse.model_validate({**data, "mock": False})
     runners = [
         RaceDayRunner(
             saddle=4,
-            horse="Sample Flyer",
+            horse_id="HK_2025_X001",
+            name="Sample Flyer",
             win_prob=0.28,
             place_prob=0.61,
             win_odds=4.5,
@@ -109,17 +117,9 @@ def raceday() -> RaceDayResponse:
             stake=120.0,
         ),
         RaceDayRunner(
-            saddle=7,
-            horse="Mock Galloper",
-            win_prob=0.19,
-            place_prob=0.49,
-            win_odds=6.0,
-            ev=0.14,
-            stake=70.0,
-        ),
-        RaceDayRunner(
             saddle=1,
-            horse="Placeholder Bay",
+            horse_id="HK_2025_X002",
+            name="Placeholder Bay",
             win_prob=0.15,
             place_prob=0.44,
             win_odds=5.5,
@@ -129,8 +129,10 @@ def raceday() -> RaceDayResponse:
     ]
     return RaceDayResponse(
         mock=True,
-        meeting_date="2026-06-24",
+        race_date="2026-06-24",
         venue="HV",
-        note="Mocked card -- live odds + real predictions arrive with the M7 live logger.",
-        races=[RaceDayRace(race_no=1, distance=1200, going="GOOD", runners=runners)],
+        model_name="logit",
+        has_live_odds=False,
+        note="Mocked card -- run `hkjc race-day --date YYYY-MM-DD --venue ST` to populate.",
+        races=[RaceDayRace(race_no=1, status="DECLARED", runners=runners)],
     )
